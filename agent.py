@@ -649,7 +649,7 @@ def execute_with_ai_recovery(
         succeeded = tool_result_succeeded(next_tool, result)
         result_text = format_tool_result(result)
 
-        status = "SUCCESS" if succeeded else "FAILED"
+        status = "SUCCESS" if succeeded else "FAILURE"
 
         execution_history.append(
             f"AI recovery {attempt}: tool={next_tool}; "
