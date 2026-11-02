@@ -1,12 +1,13 @@
 
-import json
-
-from memory import get_recent_experiences, get_experience_stats
+from memory import (
+    get_recent_experiences,
+    get_experience_stats,
+    get_memories_by_category,
+)
 
 
 def show_experiences(limit=10, tool_filter=None, failures_only=False):
     """Display saved recovery experiences."""
-
     experiences = get_recent_experiences(limit=100)
 
     if tool_filter:
@@ -46,7 +47,6 @@ def show_experiences(limit=10, tool_filter=None, failures_only=False):
 
 def show_recovery_stats():
     """Display recovery statistics."""
-
     stats = get_experience_stats()
 
     lines = [
@@ -71,12 +71,34 @@ def show_recovery_stats():
     return "\n".join(lines)
 
 
+def show_category_memories(category):
+    """Display saved memories belonging to a category."""
+    memories = get_memories_by_category(category)
+
+    if not memories:
+        return f"I don't have any memories categorized as '{category}' yet."
+
+    lines = [
+        f"\n===== JARVIS {category.upper()} MEMORIES ====="
+    ]
+
+    for memory_id, information in memories:
+        lines.append(f"- ID {memory_id}: {information}")
+
+    lines.append(f"\nTotal: {len(memories)} memories")
+    return "\n".join(lines)
+
+
 def handle_memory_command(message):
     """Handle memory inspection commands. Return None for other messages."""
-
     command = " ".join(message.lower().strip().split())
 
-    if command in ("show experiences", "show experience", "show memory experiences"):
+    # Existing recovery commands
+    if command in (
+        "show experiences",
+        "show experience",
+        "show memory experiences",
+    ):
         return show_experiences()
 
     if command in ("show recovery stats", "show experience stats"):
@@ -91,7 +113,28 @@ def handle_memory_command(message):
     if command == "show internet experiences":
         return show_experiences(tool_filter="check_internet")
 
-    if command == "help memory":
+    # New categorized-memory commands
+    category_commands = {
+        "show project memories": "project",
+        "show projects": "project",
+        "show goal memories": "goal",
+        "show goals": "goal",
+        "show education memories": "education",
+        "show education": "education",
+        "show skill memories": "skill",
+        "show skills": "skill",
+        "show preference memories": "preference",
+        "show preferences": "preference",
+        "show personal memories": "personal",
+        "show personal": "personal",
+        "show general memories": "general",
+        "show general": "general",
+    }
+
+    if command in category_commands:
+        return show_category_memories(category_commands[command])
+
+    if command in ("help memory", "help memories"):
         return (
             "\nJARVIS Memory Commands:\n"
             "- show experiences\n"
@@ -99,6 +142,13 @@ def handle_memory_command(message):
             "- show failed recoveries\n"
             "- show weather experiences\n"
             "- show internet experiences\n"
+            "- show project memories\n"
+            "- show goal memories\n"
+            "- show education memories\n"
+            "- show skill memories\n"
+            "- show preference memories\n"
+            "- show personal memories\n"
+            "- show general memories\n"
             "- help memory"
         )
 

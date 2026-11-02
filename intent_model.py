@@ -1,6 +1,6 @@
 
-# MyOwnJARVIS - First Machine Learning Model
-# This model predicts the intent behind a user's message.
+# MyOwnJARVIS - Intent Classification Model
+# Uses CountVectorizer and MultinomialNB to predict user intent.
 
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
@@ -8,272 +8,225 @@ from sklearn.pipeline import Pipeline
 
 
 # --------------------------------------------------
-# 1. TRAINING EXAMPLES
-# Each message teaches JARVIS what the user may mean.
+# 1. TRAINING EXAMPLES GROUPED BY INTENT
+# This structure keeps messages and labels aligned.
 # --------------------------------------------------
 
-training_messages = [
-    # Greeting
-    "hello",
-    "hi",
-    "hey jarvis",
-    "hey there",
-    "good morning",
-    "good evening",
-    "how are you",
+training_examples = {
+    "greeting": [
+        "hello",
+        "hi",
+        "hey jarvis",
+        "hey there",
+        "good morning",
+        "good evening",
+        "how are you",
+    ],
 
-    # Identity
-    "what is your name",
-    "who are you",
-    "tell me about yourself",
-    "who is jarvis",
-    "introduce yourself",
-    "what are you",
-    "tell me your identity",
+    "identity": [
+        "what is your name",
+        "who are you",
+        "tell me about yourself",
+        "who is jarvis",
+        "introduce yourself",
+        "what are you",
+        "tell me your identity",
+    ],
 
-    # Time
-    "what time is it",
-    "what is the time",
-    "tell me the time",
-    "show the current time",
-    "what time is it now",
-    "can you tell me the time",
-    "what time it is",
+    "time": [
+        "what time is it",
+        "what is the time",
+        "tell me the time",
+        "show the current time",
+        "what time is it now",
+        "can you tell me the time",
+        "what time it is",
+    ],
 
-    # Save memory
-    "remember my favorite language is java",
-    "remember my name is veera adithya reddy",
-    "save this information",
-    "remember this",
-    "save this for later",
+    "save_memory": [
+        "remember my favorite language is java",
+        "remember my name is veera adithya reddy",
+        "save this information",
+        "remember this",
+        "save this for later",
+        "remember that I like Python",
+        "remember that I like Maths",
+        "remember that I like JavaScript",
+        "remember my favorite subject is maths",
+        "remember my favorite food is pizza",
+        "remember my hobby is reading",
+    ],
 
-    # Recall memory
-    "what do you remember about me",
-    "show my memories",
-    "what information have you saved",
-    "please show my saved information",
-    "show my memory",
+    "recall_memory": [
+        "what do you remember about me",
+        "show my memories",
+        "what information have you saved",
+        "please show my saved information",
+        "show my memory",
+        "list everything you remember about me",
+    ],
 
-    # Set full name
-    "my name is veera adithya reddy",
-    "my full name is veera adithya reddy",
-    "remember my name is veera adithya reddy",
-    "my name is veera",
-    "my full name is veera",
+    "set_name": [
+        "my name is veera adithya reddy",
+        "my full name is veera adithya reddy",
+        "remember my name is veera adithya reddy",
+        "my name is veera",
+        "my full name is veera",
+    ],
 
-    # Set nickname
-    "call me darling",
-    "you can call me boss",
-    "my nickname is veera",
-    "change my nickname to buddy",
-    "please call me buddy",
-    "call me buddy",
-    "call me by a nickname",
+    "set_nickname": [
+        "call me darling",
+        "you can call me boss",
+        "my nickname is veera",
+        "change my nickname to buddy",
+        "please call me buddy",
+        "call me buddy",
+        "call me by a nickname",
+    ],
 
-    # Get full name
-    "what is my name",
-    "what is my full name",
-    "tell me my full name",
-    "what's my name",
+    "get_name": [
+        "what is my name",
+        "what is my full name",
+        "tell me my full name",
+        "what's my name",
+    ],
 
-    # Get nickname
-    "what is my nickname",
-    "what do you call me",
-    "which nickname do I use",
-    "tell me my nickname",
-    "please tell me my nickname",
-    "what nickname did I choose",
+    "get_nickname": [
+        "what is my nickname",
+        "what do you call me",
+        "which nickname do I use",
+        "tell me my nickname",
+        "please tell me my nickname",
+        "what nickname did I choose",
+    ],
 
-    # Goodbye
-    "goodbye",
-    "exit",
-    "see you later",
-    "see you soon",
-    "talk to you later",
-    "bye for now",
-    "bye",
-    "good night",
+    "goodbye": [
+        "goodbye",
+        "exit",
+        "see you later",
+        "see you soon",
+        "talk to you later",
+        "bye for now",
+        "bye",
+        "good night",
+    ],
 
-    # Help
-    "help",
-    "show help",
-    "what commands can you do",
-    "list available commands",
-    "what can I ask you",
-    "how can you help me",
-    
-    
-    # Open application
-    "open notepad",
-    "launch notepad",
-    "start notepad",
-    "please open notepad",
-    "can you open notepad",
-    "open the notepad application",
-    
-    
-    # Open approved applications
-    "open calculator",
-    "launch calculator",
-    "start calculator",
-    "open paint",
-    "launch paint",
-    "start paint",
+    "help": [
+        "help",
+        "show help",
+        "what commands can you do",
+        "list available commands",
+        "what can I ask you",
+        "how can you help me",
+    ],
 
+    "open_app": [
+        "open notepad",
+        "launch notepad",
+        "start notepad",
+        "please open notepad",
+        "can you open notepad",
+        "open the notepad application",
+        "open calculator",
+        "launch calculator",
+        "start calculator",
+        "open paint",
+        "launch paint",
+        "start paint",
+    ],
 
-    # Open website
-    "open google",
-    "launch google",
-    "open youtube",
-    "launch youtube",
-    "open github",
-    "launch github",
-    
-    
-    # Check internet connectivity
-    "check internet",
-    "check my internet connection",
-    "is the internet working",
-    "am I connected to the internet",
-    "test internet connection",
+    "open_website": [
+        "open google",
+        "launch google",
+        "open youtube",
+        "launch youtube",
+        "open github",
+        "launch github",
+    ],
 
-    # Weather requests
-    "check weather",
-    "what is the weather",
-    "show me the weather",
-    "weather in chennai",
-    "what is the temperature",
-    "tell me the weather in chennai",
-    
+    "check_internet": [
+        "check internet",
+        "check my internet connection",
+        "is the internet working",
+        "am I connected to the internet",
+        "test internet connection",
+    ],
+
+    "get_weather": [
+        "check weather",
+        "what is the weather",
+        "show me the weather",
+        "weather in chennai",
+        "what is the temperature",
+        "tell me the weather in chennai",
+    ],
+
+    "general_question": [
         "what is an ai",
-    "what is artificial intelligence",
-    "explain artificial intelligence",
-    "explain what an ai agent is",
-    "explain what an ai agent is in simple words",
-    "what is machine learning",
-    "explain machine learning",
-    "what is deep learning",
-    "tell me about neural networks",
-    "explain how an ai agent works",
-    "what is a language model",
-    "explain this concept",
+        "what is artificial intelligence",
+        "explain artificial intelligence",
+        "explain what an ai agent is",
+        "explain what an ai agent is in simple words",
+        "what is machine learning",
+        "explain machine learning",
+        "what is deep learning",
+        "tell me about neural networks",
+        "explain how an ai agent works",
+        "what is a language model",
+        "explain this concept",
 
+        # Academic subject preferences
+        "what subject do I like",
+        "which subject do I like",
+        "what is my favorite subject",
+        "what is my favourite subject",
+        "what subject do I prefer",
+        "which academic subject do I like",
 
-]
+        # Programming language preferences
+        "what programming language do I like",
+        "which programming language do I like",
+        "what programming language do I prefer",
+        "which programming language do I prefer",
+        "what is my favorite programming language",
+        "what is my favourite programming language",
 
-
-# --------------------------------------------------
-# 2. INTENT LABELS
-# Each label corresponds to the message at the same
-# position in training_messages.
-# --------------------------------------------------
-
-training_intents = [
-    # Greeting: 7
-    "greeting", "greeting", "greeting", "greeting",
-    "greeting", "greeting", "greeting",
-
-    # Identity: 7
-    "identity", "identity", "identity", "identity",
-    "identity", "identity", "identity",
-
-    # Time: 7
-    "time", "time", "time", "time", "time", "time", "time",
-
-    # Save memory: 5
-    "save_memory", "save_memory", "save_memory",
-    "save_memory", "save_memory",
-
-    # Recall memory: 5
-    "recall_memory", "recall_memory", "recall_memory",
-    "recall_memory", "recall_memory",
-
-    # Set full name: 5
-    "set_name", "set_name", "set_name", "set_name", "set_name",
-
-    # Set nickname: 7
-    "set_nickname", "set_nickname", "set_nickname",
-    "set_nickname", "set_nickname", "set_nickname",
-    "set_nickname",
-
-    # Get full name: 4
-    "get_name", "get_name", "get_name", "get_name",
-
-    # Get nickname: 6
-    "get_nickname", "get_nickname", "get_nickname",
-    "get_nickname", "get_nickname", "get_nickname",
-
-    # Goodbye: 8
-    "goodbye", "goodbye", "goodbye", "goodbye",
-    "goodbye", "goodbye", "goodbye", "goodbye",
-
-    # Help: 6
-    "help", "help", "help", "help", "help", "help",
-    
-    
-    # Open application: 6
-    "open_app",
-    "open_app",
-    "open_app",
-    "open_app",
-    "open_app",
-    "open_app",
-    
-    
-    # Open approved applications: 6
-    "open_app",
-    "open_app",
-    "open_app",
-    "open_app",
-    "open_app",
-    "open_app",
-    
-    
-    # Open website: 6
-    "open_website",
-    "open_website",
-    "open_website",
-    "open_website",
-    "open_website",
-    "open_website",
-    
-    
-    # Check internet: 5
-    "check_internet",
-    "check_internet",
-    "check_internet",
-    "check_internet",
-    "check_internet",
-
-
-    # Weather: 6
-    "get_weather",
-    "get_weather",
-    "get_weather",
-    "get_weather",
-    "get_weather",
-    "get_weather",
-
-    "general_question",
-    "general_question",
-    "general_question",
-    "general_question",
-    "general_question",
-    "general_question",
-    "general_question",
-    "general_question",
-    "general_question",
-    "general_question",
-    "general_question",
-    "general_question",
-
-]
+        # Other personal preferences
+        "what hobbies do I like",
+        "what is my favorite food",
+        "what music do I like",
+        "what are my interests",
+        "what do you know about my preferences",
+        "what are my hobbies",
+        "what is my favorite color",
+        "what do I like",
+        "tell me about my preferences",
+        "what do I prefer",
+    ],
+}
 
 
 # --------------------------------------------------
-# 3. CHECK TRAINING DATA
-# Every message must have exactly one matching label.
+# 2. GENERATE TRAINING MESSAGES AND LABELS
+# Each message automatically receives its correct label.
+# This prevents message-label count mismatches.
 # --------------------------------------------------
+
+training_messages = []
+training_intents = []
+
+for intent, messages in training_examples.items():
+    for message in messages:
+        training_messages.append(message.lower().strip())
+        training_intents.append(intent)
+
+
+# --------------------------------------------------
+# 3. VALIDATE TRAINING DATA
+# --------------------------------------------------
+
+if not training_messages:
+    raise ValueError("Training error: no training examples found.")
 
 if len(training_messages) != len(training_intents):
     raise ValueError(
@@ -283,8 +236,6 @@ if len(training_messages) != len(training_intents):
 
 # --------------------------------------------------
 # 4. CREATE THE MACHINE-LEARNING PIPELINE
-# CountVectorizer converts text into word counts.
-# MultinomialNB learns patterns from those word counts.
 # --------------------------------------------------
 
 model = Pipeline([
@@ -301,8 +252,57 @@ model.fit(training_messages, training_intents)
 
 
 # --------------------------------------------------
-# 6. PREDICT THE INTENT OF A USER MESSAGE
-# main.py can import and call this function.
+# 6. RULES FOR CLEAR, COMMON QUESTIONS
+# These prevent common nickname questions from being
+# confused with preference questions.
+# --------------------------------------------------
+
+NICKNAME_QUESTIONS = {
+    "what is my nickname",
+    "what's my nickname",
+    "what do you call me",
+    "which nickname do i use",
+    "tell me my nickname",
+    "please tell me my nickname",
+    "what nickname did i choose",
+}
+
+NAME_QUESTIONS = {
+    "what is my name",
+    "what's my name",
+    "what is my full name",
+    "tell me my full name",
+}
+
+PREFERENCE_STARTS = (
+    "what subject do i like",
+    "which subject do i like",
+    "what is my favorite subject",
+    "what is my favourite subject",
+    "what subject do i prefer",
+    "which academic subject do i like",
+    "what programming language do i like",
+    "which programming language do i like",
+    "what programming language do i prefer",
+    "which programming language do i prefer",
+    "what is my favorite programming language",
+    "what is my favourite programming language",
+    "what hobbies do i like",
+    "what are my hobbies",
+    "what is my favorite food",
+    "what music do i like",
+    "what are my interests",
+    "what do you know about my preferences",
+    "what is my favorite color",
+    "what do i like",
+    "what do i prefer",
+    "tell me about my preferences",
+)
+
+
+# --------------------------------------------------
+# 7. PREDICT USER INTENT
+# This function remains compatible with main.py.
 # --------------------------------------------------
 
 def predict_intent(message):
@@ -311,11 +311,33 @@ def predict_intent(message):
     if not isinstance(message, str) or not message.strip():
         return "unknown"
 
-    return model.predict([message.strip().lower()])[0]
+    normalized_message = " ".join(
+        message.lower().strip().rstrip("?!.,").split()
+    )
+
+    # Exact questions get reliable classifications.
+    if normalized_message in NICKNAME_QUESTIONS:
+        return "get_nickname"
+
+    if normalized_message in NAME_QUESTIONS:
+        return "get_name"
+
+    # Personal preference questions should be handled
+    # as general questions, not nickname questions.
+    if any(
+        normalized_message == question
+        or normalized_message.startswith(question + " ")
+        for question in PREFERENCE_STARTS
+    ):
+        return "general_question"
+
+    # Use the trained machine-learning model for all
+    # other messages.
+    return model.predict([normalized_message])[0]
 
 
 # --------------------------------------------------
-# 7. TEST THE MODEL WHEN THIS FILE IS RUN DIRECTLY
+# 8. TEST THE MODEL WHEN RUN DIRECTLY
 # --------------------------------------------------
 
 test_messages = [
@@ -327,6 +349,10 @@ test_messages = [
     "my full name is veera adithya reddy",
     "please call me buddy",
     "what is my nickname",
+    "what subject do I like",
+    "what programming language do I like",
+    "what is my favorite subject",
+    "what is my name",
     "help",
 ]
 
