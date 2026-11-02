@@ -8,6 +8,9 @@ def respond_to_user(message):
 
     message = message.lower().strip()
 
+# Remove punctuation at the beginning and end
+    message = message.rstrip("?!., ")
+
     if message in ["hello", "hi", "hey"]:
         return "Hello! How can I help you?"
 
