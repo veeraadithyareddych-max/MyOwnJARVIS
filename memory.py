@@ -30,21 +30,42 @@ def initialize_memory():
         connection.close()
 
 
+
 def save_memory(information):
-    """Save information in the local database."""
+    """Save information only if an equivalent memory does not exist."""
+
+    if not isinstance(information, str):
+        raise TypeError("Memory information must be a string.")
+
+    information = information.strip()
+
+    if not information:
+        raise ValueError("Memory information cannot be empty.")
+
+    normalized_information = information.casefold()
 
     connection = sqlite3.connect(DATABASE_NAME)
 
     try:
+        existing_memories = connection.execute(
+            "SELECT information FROM memories"
+        ).fetchall()
+
+        for (existing_information,) in existing_memories:
+            if existing_information.strip().casefold() == normalized_information:
+                return False
+
         connection.execute(
             "INSERT INTO memories (information) VALUES (?)",
             (information,),
         )
 
         connection.commit()
+        return True
 
     finally:
         connection.close()
+
 
 
 def get_memories():
@@ -405,6 +426,7 @@ def get_relevant_experiences(
 # 5. EXPERIENCE AND RECOVERY STATISTICS
 # ============================================================
 
+
 def get_experience_stats():
     """Return statistics about recorded recovery outcomes."""
 
@@ -423,6 +445,8 @@ def get_experience_stats():
                 "total": 0,
                 "successes": 0,
                 "failures": 0,
+                "blocked": 0,
+                "declined": 0,
                 "success_rate": 0.0,
                 "by_tool": [],
             }
@@ -430,14 +454,14 @@ def get_experience_stats():
         totals = connection.execute("""
             SELECT
                 COUNT(*) AS total,
-                SUM(
-                    CASE WHEN outcome = 'SUCCESS'
-                    THEN 1 ELSE 0 END
-                ) AS successes,
-                SUM(
-                    CASE WHEN outcome != 'SUCCESS'
-                    THEN 1 ELSE 0 END
-                ) AS failures
+                SUM(CASE WHEN outcome = 'SUCCESS'
+                    THEN 1 ELSE 0 END) AS successes,
+                SUM(CASE WHEN outcome = 'FAILURE'
+                    THEN 1 ELSE 0 END) AS failures,
+                SUM(CASE WHEN outcome = 'BLOCKED'
+                    THEN 1 ELSE 0 END) AS blocked,
+                SUM(CASE WHEN outcome = 'DECLINED'
+                    THEN 1 ELSE 0 END) AS declined
             FROM experiences
         """).fetchone()
 
@@ -445,10 +469,14 @@ def get_experience_stats():
             SELECT
                 failed_tool,
                 COUNT(*) AS attempts,
-                SUM(
-                    CASE WHEN outcome = 'SUCCESS'
-                    THEN 1 ELSE 0 END
-                ) AS successes
+                SUM(CASE WHEN outcome = 'SUCCESS'
+                    THEN 1 ELSE 0 END) AS successes,
+                SUM(CASE WHEN outcome = 'FAILURE'
+                    THEN 1 ELSE 0 END) AS failures,
+                SUM(CASE WHEN outcome = 'BLOCKED'
+                    THEN 1 ELSE 0 END) AS blocked,
+                SUM(CASE WHEN outcome = 'DECLINED'
+                    THEN 1 ELSE 0 END) AS declined
             FROM experiences
             GROUP BY failed_tool
             ORDER BY attempts DESC
@@ -457,10 +485,16 @@ def get_experience_stats():
         total = totals["total"] or 0
         successes = totals["successes"] or 0
         failures = totals["failures"] or 0
+        blocked = totals["blocked"] or 0
+        declined = totals["declined"] or 0
+
+        # Rate measures successful recoveries among actual
+        # recovery attempts, excluding blocked/declined decisions.
+        attempted_recoveries = successes + failures
 
         success_rate = (
-            round(successes / total * 100, 2)
-            if total
+            round(successes / attempted_recoveries * 100, 2)
+            if attempted_recoveries
             else 0.0
         )
 
@@ -468,6 +502,8 @@ def get_experience_stats():
             "total": total,
             "successes": successes,
             "failures": failures,
+            "blocked": blocked,
+            "declined": declined,
             "success_rate": success_rate,
             "by_tool": [dict(row) for row in by_tool],
         }

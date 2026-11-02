@@ -557,11 +557,30 @@ def execute_with_ai_recovery(
         make_action_key(current_tool, current_arguments)
     )
 
-    def stop_recovery(message):
+   
+    def stop_recovery(message, outcome):
+        """Record why recovery stopped without executing another action."""
+
         execution_history.append(
-            f"AI recovery: FAILED: {message}"
+            f"AI recovery: {outcome}: {message}"
         )
         print(message)
+
+        try:
+            save_experience(
+                user_request=user_request,
+                failed_tool=current_tool,
+                failed_arguments=current_arguments,
+                error_message=current_error,
+                recovery_tool="",
+                recovery_arguments={},
+                outcome=outcome,
+            )
+        except Exception as error:
+            print(
+                "Warning: Could not save recovery decision: "
+                f"{error}"
+            )
 
         return (
             make_tool_result(
@@ -573,6 +592,7 @@ def execute_with_ai_recovery(
             current_tool,
             current_arguments,
         )
+
 
     for attempt in range(1, max_recovery_attempts + 1):
         print(f"AI recovery analysis {attempt}...")
@@ -595,11 +615,15 @@ def execute_with_ai_recovery(
 
         except Exception as error:
             return stop_recovery(
-                f"Could not obtain an AI recovery decision: {error}"
-            )
+    f"Could not obtain an AI recovery decision: {error}",
+    "DECLINED",
+)
 
         if not isinstance(decision, dict):
-            return stop_recovery("Recovery stopped: invalid AI response.")
+            return stop_recovery(
+    "Recovery stopped: invalid AI response.",
+    "DECLINED",
+)
 
         if decision.get("recover") is not True:
             reason = decision.get(
@@ -607,8 +631,9 @@ def execute_with_ai_recovery(
                 "Recovery was not recommended.",
             )
             return stop_recovery(
-                f"Recovery declined. Reason: {reason}"
-            )
+    f"Recovery declined. Reason: {reason}",
+    "DECLINED",
+)
 
         next_tool = decision.get("tool")
         next_arguments = decision.get("arguments", {})
@@ -620,23 +645,26 @@ def execute_with_ai_recovery(
 
         if validation_error:
             return stop_recovery(
-                f"Recovery blocked: {validation_error}"
-            )
+    f"Recovery blocked: {validation_error}",
+    "BLOCKED",
+)
 
         if (
             next_tool == "open_website"
             and not website_was_requested(user_request, normalized_arguments)
         ):
             return stop_recovery(
-                "Recovery blocked: website was not explicitly requested."
-            )
+    "Recovery blocked: website was not explicitly requested.",
+    "BLOCKED",
+)
 
         action_key = make_action_key(next_tool, normalized_arguments)
 
         if action_key in attempted_actions:
             return stop_recovery(
-                "Recovery stopped: duplicate action detected."
-            )
+    "Recovery stopped: duplicate action detected.",
+    "BLOCKED",
+)
 
         attempted_actions.add(action_key)
 
