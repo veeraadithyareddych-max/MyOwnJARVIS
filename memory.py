@@ -168,6 +168,7 @@ def get_recent_experiences(limit=5):
 
 
 
+
 def get_relevant_experiences(
     failed_tool,
     error_message="",
@@ -175,17 +176,11 @@ def get_relevant_experiences(
     user_request="",
 ):
     """
-    Retrieve relevant past recovery experiences.
+    Retrieve recovery experiences using request relevance,
+    recovery-argument relevance, outcome, and recency.
 
-    Ranking considers:
-    - Error-message similarity
-    - Similarity to the current user request
-    - Recovery outcome
-    - Recency
-    - Duplicate filtering
-
-    Stored experiences guide recovery decisions. They do not
-    train or fine-tune the language model.
+    The current request takes priority over conflicting historical
+    recovery arguments. Stored experiences do not train the LLM.
     """
 
     import json
@@ -223,12 +218,10 @@ def get_relevant_experiences(
             "because", "when", "then", "have", "has",
         }
 
-        # Generic task words should not outweigh specific
-        # details such as Chennai or Mumbai.
         request_stop_words = stop_words | {
             "get", "weather", "current", "today", "what",
             "tell", "show", "find", "check", "want",
-            "need", "give", "information", "about",
+            "need", "give", "information", "about", "in",
         }
 
         def meaningful_words(text, ignored_words=None):
@@ -238,15 +231,26 @@ def get_relevant_experiences(
                     (text or "").lower(),
                 )
             )
-
-            ignored = stop_words if ignored_words is None else ignored_words
+            ignored = (
+                stop_words
+                if ignored_words is None
+                else ignored_words
+            )
             return words - ignored
 
-        current_error_words = meaningful_words(error_message)
-        current_request_words = meaningful_words(
-            user_request,
-            request_stop_words,
-        )
+        def decode_arguments(value):
+            if isinstance(value, dict):
+                return value
+
+            if isinstance(value, str):
+                try:
+                    decoded = json.loads(value)
+                    if isinstance(decoded, dict):
+                        return decoded
+                except json.JSONDecodeError:
+                    pass
+
+            return {}
 
         def word_similarity(first_words, second_words):
             if not first_words or not second_words:
@@ -263,14 +267,17 @@ def get_relevant_experiences(
 
             return 0.7 * jaccard + 0.3 * coverage
 
-        def rank_experience(item, position):
+        current_error_words = meaningful_words(error_message)
+        current_request_words = meaningful_words(
+            user_request,
+            request_stop_words,
+        )
+
+        ranked = []
+
+        for position, item in enumerate(experiences):
             past_error_words = meaningful_words(
                 item.get("error_message", "")
-            )
-
-            error_similarity = word_similarity(
-                current_error_words,
-                past_error_words,
             )
 
             past_request_words = meaningful_words(
@@ -278,41 +285,57 @@ def get_relevant_experiences(
                 request_stop_words,
             )
 
+            error_similarity = word_similarity(
+                current_error_words,
+                past_error_words,
+            )
+
             request_similarity = word_similarity(
                 current_request_words,
                 past_request_words,
             )
 
-            outcome = str(
-                item.get("outcome", "")
-            ).upper()
+            recovery_arguments = decode_arguments(
+                item.get("recovery_arguments", {})
+            )
+
+            recovery_argument_text = json.dumps(
+                recovery_arguments,
+                ensure_ascii=False,
+                default=str,
+            )
+
+            recovery_argument_words = meaningful_words(
+                recovery_argument_text,
+                request_stop_words,
+            )
+
+            # Does this recovery's arguments match the current request?
+            argument_similarity = word_similarity(
+                current_request_words,
+                recovery_argument_words,
+            )
+
+            outcome = str(item.get("outcome", "")).upper()
 
             if outcome == "SUCCESS":
-                outcome_score = 0.12
+                outcome_score = 0.10
             elif outcome == "FAILURE":
-                outcome_score = -0.08
+                outcome_score = -0.10
             else:
                 outcome_score = 0.0
 
-            recency_score = 0.05 * (
+            recency_score = 0.02 * (
                 (len(experiences) - position)
                 / max(len(experiences), 1)
             )
 
             total_score = (
-                0.65 * error_similarity
-                + 0.35 * request_similarity
+                0.25 * error_similarity
+                + 0.40 * request_similarity
+                + 0.35 * argument_similarity
                 + outcome_score
                 + recency_score
-            )
-
-            return total_score, error_similarity, request_similarity
-
-        ranked = []
-
-        for position, item in enumerate(experiences):
-            total_score, error_similarity, request_similarity = (
-                rank_experience(item, position)
             )
 
             item["_relevance_score"] = round(total_score, 4)
@@ -321,6 +344,9 @@ def get_relevant_experiences(
             )
             item["_request_similarity"] = round(
                 request_similarity, 4
+            )
+            item["_argument_similarity"] = round(
+                argument_similarity, 4
             )
 
             ranked.append(item)
@@ -333,8 +359,7 @@ def get_relevant_experiences(
             reverse=True,
         )
 
-        # Remove duplicate recovery examples while retaining
-        # the highest-ranked instance of each example.
+        # Keep the best-ranked version of each distinct example.
         unique_experiences = []
         seen = set()
 
@@ -344,7 +369,9 @@ def get_relevant_experiences(
                 str(item.get("error_message", "")).strip().lower(),
                 str(item.get("recovery_tool", "")).lower(),
                 json.dumps(
-                    item.get("recovery_arguments", ""),
+                    decode_arguments(
+                        item.get("recovery_arguments", {})
+                    ),
                     sort_keys=True,
                     default=str,
                 ),
@@ -360,11 +387,11 @@ def get_relevant_experiences(
             if len(unique_experiences) >= limit:
                 break
 
-        # Remove internal ranking fields before returning.
         for item in unique_experiences:
             item.pop("_relevance_score", None)
             item.pop("_error_similarity", None)
             item.pop("_request_similarity", None)
+            item.pop("_argument_similarity", None)
 
         return unique_experiences
 
