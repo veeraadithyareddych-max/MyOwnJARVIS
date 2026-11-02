@@ -3,7 +3,7 @@
 # Our first interactive personal assistant
 
 
-
+from memory import initialize_memory, save_memory, get_memories
 def respond_to_user(message):
     """Choose a response based on the user's message."""
 
@@ -47,6 +47,32 @@ def respond_to_user(message):
             "- what is today's date\n"
             "- exit"
         )
+    
+    elif message.startswith("remember "):
+        information = message[len("remember "):].strip()
+
+        if information:
+            save_memory(information)
+            return f"I'll remember that: {information}"
+        else:
+            return "Please tell me what you want me to remember."
+
+    elif message in [
+        "what do you remember about me",
+        "show my memories",
+        "show memory"
+    ]:
+        memories = get_memories()
+
+        if not memories:
+            return "I haven't saved anything yet."
+
+        saved_information = [
+            f"{memory_id}. {information}"
+            for memory_id, information in memories
+        ]
+
+        return "Here is what I remember:\n" + "\n".join(saved_information)
 
     else:
         return (
@@ -75,4 +101,5 @@ def main():
 
 
 if __name__ == "__main__":
+    initialize_memory()
     main()
