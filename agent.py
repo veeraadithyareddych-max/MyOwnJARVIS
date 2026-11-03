@@ -504,6 +504,7 @@ def website_was_requested(user_request, arguments):
     )
 
 
+
 def execute_ai_agent_task(message):
     """Ask the local AI to plan tasks, validate them, and execute them."""
 
@@ -518,7 +519,29 @@ def execute_ai_agent_task(message):
         return "The AI planner returned an invalid task list."
 
     if not tasks:
-        return "The AI planner did not select any tools."
+        request_lower = message.lower()
+
+        application_request_phrases = (
+            "open ",
+            "launch ",
+            "start ",
+            "run ",
+        )
+
+        if any(
+            phrase in request_lower
+            for phrase in application_request_phrases
+        ):
+            return (
+                "I couldn't identify a valid application action for "
+                "your request. Please check the application name "
+                "and try again."
+            )
+
+        return (
+            "I couldn't determine the required action for this request. "
+            "Please rephrase it."
+        )
 
     if len(tasks) > 5:
         return "The plan contains too many tasks. Please simplify your request."
@@ -565,6 +588,7 @@ def execute_ai_agent_task(message):
 # 9. RESULT-AWARE TASK EXECUTION
 # ============================================================
 
+
 def execute_result_aware_task(message):
     """Execute AI-planned tasks and stop after a failed internet check."""
 
@@ -579,10 +603,32 @@ def execute_result_aware_task(message):
         return "The AI planner returned an invalid task list."
 
     if not tasks:
-        return "The AI planner did not select any tools for this request."
+        request_lower = message.lower()
+
+        application_request_phrases = (
+            "open ",
+            "launch ",
+            "start ",
+            "run ",
+        )
+
+        if any(
+            phrase in request_lower
+            for phrase in application_request_phrases
+        ):
+            return (
+                "I couldn't identify a valid application action for "
+                "your request. Please check the application name "
+                "and try again."
+            )
+
+        return (
+            "I couldn't determine the required action for this request. "
+            "Please rephrase it."
+        )
 
     if len(tasks) > 5:
-        return "The plan contains too many tasks. Please simplify the request."
+        return "The plan contains too many tasks. Please simplify your request."
 
     results = []
 
@@ -649,6 +695,7 @@ def execute_result_aware_task(message):
         + "\n\nJARVIS summary:\n"
         + str(summary)
     )
+
 
 
 # ============================================================
