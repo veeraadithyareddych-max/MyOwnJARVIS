@@ -222,5 +222,79 @@ class RecoveryDecisionTests(unittest.TestCase):
         self.assertEqual(mock_execute_tool.call_count, 0)
 
 
+    def test_07_ai_recovery_exception_stops_safely(self):
+        history = self.execution_history.copy()
+
+        with patch(
+            "agent.ask_local_ai_for_recovery",
+            side_effect=RuntimeError("AI service unavailable"),
+        ), patch(
+            "agent.save_experience",
+        ) as mock_save, patch(
+            "agent.execute_tool",
+        ) as mock_execute:
+
+            result, succeeded, tool, arguments = (
+                execute_with_ai_recovery(
+                    user_request=self.user_request,
+                    tool_name=self.failed_tool,
+                    arguments=self.arguments,
+                    initial_error=self.error_message,
+                    execution_history=history,
+                )
+            )
+
+        self.assertFalse(succeeded)
+        self.assertFalse(result["success"])
+        self.assertEqual(tool, self.failed_tool)
+        self.assertEqual(arguments, self.arguments)
+        self.assertIn(
+    "AI service unavailable",
+    "\n".join(history),
+)
+        mock_save.assert_called_once()
+        self.assertEqual(
+            mock_save.call_args.kwargs["outcome"],
+            "DECLINED",
+        )
+        mock_execute.assert_not_called()
+
+    def test_08_invalid_ai_response_stops_safely(self):
+        history = self.execution_history.copy()
+
+        with patch(
+            "agent.ask_local_ai_for_recovery",
+            return_value=["invalid", "response"],
+        ), patch(
+            "agent.save_experience",
+        ) as mock_save, patch(
+            "agent.execute_tool",
+        ) as mock_execute:
+
+            result, succeeded, tool, arguments = (
+                execute_with_ai_recovery(
+                    user_request=self.user_request,
+                    tool_name=self.failed_tool,
+                    arguments=self.arguments,
+                    initial_error=self.error_message,
+                    execution_history=history,
+                )
+            )
+
+        self.assertFalse(succeeded)
+        self.assertFalse(result["success"])
+        self.assertEqual(tool, self.failed_tool)
+        self.assertEqual(arguments, self.arguments)
+        self.assertIn(
+    "invalid ai response",
+    "\n".join(history).lower(),
+)
+        mock_save.assert_called_once()
+        self.assertEqual(
+            mock_save.call_args.kwargs["outcome"],
+            "DECLINED",
+        )
+        mock_execute.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
