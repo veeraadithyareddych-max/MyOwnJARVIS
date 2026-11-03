@@ -873,7 +873,7 @@ def execute_conditional_task(message):
             {"site_name": requested_website},
         )
 
-    if direct_action:
+    if direct_action and len(required_tools) <= 1:
         tool_name, arguments = direct_action
 
         result, attempts, succeeded = execute_with_recovery(
