@@ -1235,11 +1235,13 @@ def execute_conditional_task(message):
             )
 
         return finish(
-    "Task completed successfully. The action was accepted, "
-    "but its outcome has not been confirmed."
-    if succeeded
-    else "Task incomplete."
-)
+            (
+                "Action accepted. The tool reported success, "
+                "but the outcome has not been independently verified."
+            )
+            if succeeded
+            else "Task incomplete."
+        )
 
     # --------------------------------------------------------
     # Multi-step AI execution

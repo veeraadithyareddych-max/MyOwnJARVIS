@@ -393,7 +393,16 @@ class Phase6ExecutionTests(unittest.TestCase):
         result = agent.execute_conditional_task("Open Notepad.")
 
         self.assertIn("Application launch request accepted", result)
-        self.assertNotIn("independently verified", result)
+        self.assertIn("Action accepted.", result)
+        self.assertIn(
+            "outcome has not been independently verified",
+            result,
+        )
+        self.assertNotIn("Task completed successfully.", result)
+        self.assertNotIn(
+        "Internet connectivity independently verified.",
+        result,
+        )
         mock_verify.assert_not_called()
 
     @patch("agent.verify_internet_connection")
