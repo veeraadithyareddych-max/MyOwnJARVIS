@@ -277,7 +277,12 @@ class Phase6ExecutionTests(unittest.TestCase):
             "success": True,
             "tool": "check_internet",
             "status": "verified",
-            "evidence": "Independent HTTP request returned HTTP 200.",
+            
+"evidence": {
+    "check": "Independent HTTP request",
+    "observed": "HTTP 200 returned by the test server.",
+},
+
             "error": None,
         }
 
@@ -534,7 +539,12 @@ class Phase6ExecutionTests(unittest.TestCase):
             "success": True,
             "tool": "check_internet",
             "status": "verified",
-            "evidence": "Independent HTTP request returned HTTP 200.",
+            
+"evidence": {
+    "check": "Independent HTTP request",
+    "observed": "HTTP 200 returned by the test server.",
+},
+
             "error": None,
         }
 

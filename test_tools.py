@@ -1,11 +1,16 @@
 
 import unittest
+from unittest.mock import MagicMock, patch
 
 import agent
 import tools
-from unittest.mock import patch, MagicMock
+
 
 class ToolExecutionTests(unittest.TestCase):
+
+    # ========================================================
+    # APPLICATION AND WEBSITE TESTS
+    # ========================================================
 
     @patch("tools.subprocess.Popen")
     def test_notepad_launch_is_accepted(self, mock_popen):
@@ -32,9 +37,7 @@ class ToolExecutionTests(unittest.TestCase):
     def test_google_open_is_accepted(self, mock_open):
         result = tools.open_website("Google")
 
-        mock_open.assert_called_once_with(
-            "https://www.google.com"
-        )
+        mock_open.assert_called_once_with("https://www.google.com")
         self.assertTrue(result["success"])
         self.assertEqual(result["tool"], "open_website")
 
@@ -44,6 +47,16 @@ class ToolExecutionTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertIn("did not confirm", result["error"])
+
+    def test_unsupported_website_is_rejected(self):
+        result = tools.open_website("UnknownWebsite")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["tool"], "open_website")
+
+    # ========================================================
+    # TOOL RESULT VALIDATION TESTS
+    # ========================================================
 
     def test_rejects_non_boolean_success_flag(self):
         fake_result = {
@@ -109,37 +122,6 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIn("mismatched tool name", result["error"])
 
-    def test_unsupported_website_is_rejected(self):
-        result = tools.open_website("UnknownWebsite")
-
-        self.assertFalse(result["success"])
-        self.assertEqual(result["tool"], "open_website")
-
-
-    def test_application_launch_reports_accepted_not_verified(self):
-        with patch("tools.subprocess.Popen") as mock_popen:
-            result = tools.open_application("Notepad")
-
-        self.assertTrue(result["success"])
-        self.assertEqual(result["tool"], "open_application")
-        self.assertEqual(result.get("status"), "accepted")
-
-    @patch("tools.webbrowser.open", return_value=True)
-    def test_website_open_reports_accepted_not_verified(self, mock_open):
-        result = tools.open_website("Google")
-
-        self.assertTrue(result["success"])
-        self.assertEqual(result["tool"], "open_website")
-        self.assertEqual(result.get("status"), "accepted")
-
-    @patch("tools.subprocess.Popen", side_effect=OSError("Launch failed"))
-    def test_failed_application_launch_reports_failed_status(self, mock_popen):
-        result = tools.open_application("Notepad")
-
-        self.assertFalse(result["success"])
-        self.assertEqual(result["tool"], "open_application")
-        self.assertEqual(result.get("status"), "failed")
-
     def test_rejects_verified_status_without_verification_evidence(self):
         fake_result = {
             "success": True,
@@ -189,7 +171,39 @@ class ToolExecutionTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertIn("execution status", result["error"])
-    
+
+    # ========================================================
+    # EXECUTION STATUS TESTS
+    # ========================================================
+
+    def test_application_launch_reports_accepted_not_verified(self):
+        with patch("tools.subprocess.Popen"):
+            result = tools.open_application("Notepad")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool"], "open_application")
+        self.assertEqual(result.get("status"), "accepted")
+
+    @patch("tools.webbrowser.open", return_value=True)
+    def test_website_open_reports_accepted_not_verified(self, mock_open):
+        result = tools.open_website("Google")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool"], "open_website")
+        self.assertEqual(result.get("status"), "accepted")
+
+    @patch("tools.subprocess.Popen", side_effect=OSError("Launch failed"))
+    def test_failed_application_launch_reports_failed_status(self, mock_popen):
+        result = tools.open_application("Notepad")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["tool"], "open_application")
+        self.assertEqual(result.get("status"), "failed")
+
+    # ========================================================
+    # STRUCTURED VERIFICATION RESULT TESTS
+    # ========================================================
+
     def test_verification_requires_evidence(self):
         result = agent.make_verification_result(
             True,
@@ -204,12 +218,22 @@ class ToolExecutionTests(unittest.TestCase):
         result = agent.make_verification_result(
             True,
             "open_application",
-            evidence="Independent check confirmed the requested condition.",
+            evidence={
+                "check": "Independent application check",
+                "observed": "The requested application was detected.",
+            },
         )
 
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "verified")
-        self.assertIsNotNone(result["evidence"])
+        self.assertEqual(
+            result["evidence"]["check"],
+            "Independent application check",
+        )
+        self.assertEqual(
+            result["evidence"]["observed"],
+            "The requested application was detected.",
+        )
 
     def test_failed_verification_stays_failed(self):
         result = agent.make_verification_result(
@@ -222,8 +246,26 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIsNotNone(result["error"])
 
+    def test_verification_evidence_must_not_be_speculation(self):
+        result = agent.make_verification_result(
+            True,
+            "open_application",
+            evidence="The application probably opened.",
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIsNone(result["evidence"])
+
+    # ========================================================
+    # INDEPENDENT INTERNET VERIFICATION TESTS
+    # ========================================================
+
     @patch("agent.urllib.request.urlopen")
-    def test_internet_verification_confirms_successful_response(self, mock_urlopen):
+    def test_internet_verification_confirms_successful_response(
+        self,
+        mock_urlopen,
+    ):
         mock_response = MagicMock()
         mock_response.getcode.return_value = 200
         mock_urlopen.return_value.__enter__.return_value = mock_response
@@ -232,10 +274,23 @@ class ToolExecutionTests(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "verified")
-        self.assertIn("HTTP 200", result["evidence"])
+        self.assertEqual(result["tool"], "check_internet")
+        self.assertIsInstance(result["evidence"], dict)
+
+        self.assertEqual(
+            result["evidence"]["check"],
+            "Independent HTTP HEAD request",
+        )
+        self.assertEqual(
+            result["evidence"]["observed"],
+            "HTTP 200 returned by https://www.google.com",
+        )
 
     @patch("agent.urllib.request.urlopen")
-    def test_internet_verification_rejects_server_error(self, mock_urlopen):
+    def test_internet_verification_rejects_server_error(
+        self,
+        mock_urlopen,
+    ):
         mock_response = MagicMock()
         mock_response.getcode.return_value = 500
         mock_urlopen.return_value.__enter__.return_value = mock_response
@@ -244,9 +299,14 @@ class ToolExecutionTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "failed")
+        self.assertIsNone(result["evidence"])
+        self.assertIsNotNone(result["error"])
 
     @patch("agent.urllib.request.urlopen")
-    def test_internet_verification_handles_connection_error(self, mock_urlopen):
+    def test_internet_verification_handles_connection_error(
+        self,
+        mock_urlopen,
+    ):
         mock_urlopen.side_effect = OSError("Connection unavailable")
 
         result = agent.verify_internet_connection()
@@ -254,6 +314,7 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "failed")
         self.assertIn("Connection unavailable", result["error"])
-        
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

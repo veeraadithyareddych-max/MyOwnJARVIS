@@ -2,9 +2,11 @@
 # ============================================================
 # MyOwnJARVIS - Agent Tool Registry and Task Planner
 # Structured Tool Results + AI Recovery + Memory
+# Context-Aware Execution + Independent Verification
 # ============================================================
 
 import json
+import urllib.request
 
 from tools import (
     open_application,
@@ -24,7 +26,7 @@ from memory import (
     save_experience,
     get_relevant_experiences,
 )
-import urllib.request
+
 
 # ============================================================
 # 1. TOOL REGISTRY
@@ -49,7 +51,6 @@ def list_available_tools():
 
 def make_tool_result(success, tool, data=None, error=None):
     """Create a consistent structured result with execution status."""
-
     return {
         "success": success,
         "tool": tool,
@@ -59,25 +60,50 @@ def make_tool_result(success, tool, data=None, error=None):
     }
 
 
-def make_verification_result(verified, tool, evidence=None, error=None):
-    """Create a separate result for independently checked outcomes."""
+# ============================================================
+# 2. INDEPENDENT VERIFICATION
+# ============================================================
 
-    if verified is True and isinstance(evidence, str) and evidence.strip():
-        return {
-            "success": True,
-            "tool": tool,
-            "status": "verified",
-            "evidence": evidence,
-            "error": None,
-        }
+def make_verification_result(verified, tool, evidence=None, error=None):
+    """
+    Create a structured result for an independently checked outcome.
+
+    Evidence must describe both the verification procedure and
+    the observed result. A plain text claim is not sufficient.
+    """
+
+    if verified is True and isinstance(evidence, dict):
+        check = evidence.get("check")
+        observed = evidence.get("observed")
+
+        if (
+            isinstance(check, str)
+            and check.strip()
+            and isinstance(observed, str)
+            and observed.strip()
+        ):
+            return {
+                "success": True,
+                "tool": tool,
+                "status": "verified",
+                "evidence": {
+                    "check": check.strip(),
+                    "observed": observed.strip(),
+                },
+                "error": None,
+            }
 
     return {
         "success": False,
         "tool": tool,
         "status": "failed",
         "evidence": None,
-        "error": error or "Independent verification evidence is missing.",
+        "error": (
+            error
+            or "Structured independent verification evidence is missing."
+        ),
     }
+
 
 def verify_internet_connection(timeout=5):
     """Independently verify internet reachability using an HTTP request."""
@@ -97,10 +123,10 @@ def verify_internet_connection(timeout=5):
             return make_verification_result(
                 True,
                 "check_internet",
-                evidence=(
-                    f"Independent HTTP request to {url} "
-                    f"returned HTTP {status_code}."
-                ),
+                evidence={
+                    "check": "Independent HTTP HEAD request",
+                    "observed": f"HTTP {status_code} returned by {url}",
+                },
             )
 
         return make_verification_result(
@@ -117,7 +143,12 @@ def verify_internet_connection(timeout=5):
             "check_internet",
             error=f"Independent internet verification failed: {error}",
         )
-        
+
+
+# ============================================================
+# 3. TOOL EXECUTION AND RESULT VALIDATION
+# ============================================================
+
 def execute_tool(tool_name, **arguments):
     """Execute an approved tool and validate its structured result."""
 
@@ -133,7 +164,6 @@ def execute_tool(tool_name, **arguments):
     try:
         result = tool(**arguments)
 
-        # Every tool must return a dictionary.
         if not isinstance(result, dict):
             return make_tool_result(
                 False,
@@ -141,7 +171,6 @@ def execute_tool(tool_name, **arguments):
                 error="The tool returned an invalid result format.",
             )
 
-        # The returned tool name must match the requested tool.
         if result.get("tool") != tool_name:
             return make_tool_result(
                 False,
@@ -149,7 +178,6 @@ def execute_tool(tool_name, **arguments):
                 error="The tool returned a mismatched tool name.",
             )
 
-        # The success flag must be an actual Boolean.
         if type(result.get("success")) is not bool:
             return make_tool_result(
                 False,
@@ -157,7 +185,6 @@ def execute_tool(tool_name, **arguments):
                 error="The tool returned an invalid success flag.",
             )
 
-        # Successful results must contain result data.
         if result["success"] is True:
             if result.get("data") is None:
                 return make_tool_result(
@@ -165,8 +192,6 @@ def execute_tool(tool_name, **arguments):
                     tool_name,
                     error="The tool reported success without result data.",
                 )
-
-        # Failed results must provide a meaningful error message.
         else:
             error_message = result.get("error")
 
@@ -180,8 +205,6 @@ def execute_tool(tool_name, **arguments):
                     error="The tool failed without providing an error message.",
                 )
 
-        # Validate execution status only after validating the
-        # result structure, success flag, and data/error fields.
         expected_status = (
             "accepted" if result["success"] is True else "failed"
         )
@@ -211,7 +234,7 @@ def execute_tool(tool_name, **arguments):
 
 
 # ============================================================
-# 2. TOOL ARGUMENT VALIDATION
+# 4. TOOL ARGUMENT VALIDATION
 # ============================================================
 
 def validate_tool_arguments(tool_name, arguments):
@@ -267,11 +290,12 @@ def validate_tool_arguments(tool_name, arguments):
 
 
 # ============================================================
-# 3. STRUCTURED RESULT HANDLING
+# 5. STRUCTURED RESULT HANDLING
 # ============================================================
 
+
 def tool_result_succeeded(tool_name, result):
-    """Determine success using the structured result, not text matching."""
+    """Determine success using structured results, not text matching."""
 
     if not isinstance(result, dict):
         return False
@@ -279,7 +303,16 @@ def tool_result_succeeded(tool_name, result):
     if result.get("tool") != tool_name:
         return False
 
-    return result.get("success") is True
+    if result.get("success") is not True:
+        return False
+
+    # Older valid results may not include a status field.
+    # If supplied, the status must indicate an accepted action.
+    status = result.get("status")
+    if status is not None and status != "accepted":
+        return False
+
+    return True
 
 
 def format_tool_result(result):
@@ -311,8 +344,51 @@ def result_to_json(result):
         return str(result)
 
 
+def verification_evidence_is_valid(verification):
+    """Check that a verification result contains structured evidence."""
+
+    if not isinstance(verification, dict):
+        return False
+
+    if verification.get("success") is not True:
+        return False
+
+    if verification.get("status") != "verified":
+        return False
+
+    evidence = verification.get("evidence")
+
+    if not isinstance(evidence, dict):
+        return False
+
+    check = evidence.get("check")
+    observed = evidence.get("observed")
+
+    return (
+        isinstance(check, str)
+        and bool(check.strip())
+        and isinstance(observed, str)
+        and bool(observed.strip())
+    )
+
+
+def format_verification_evidence(verification):
+    """Format valid structured verification evidence for display."""
+
+    if not verification_evidence_is_valid(verification):
+        return (
+            verification.get("error", "Verification failed.")
+            if isinstance(verification, dict)
+            else "Verification returned an invalid result."
+        )
+
+    evidence = verification["evidence"]
+
+    return f"{evidence['check']}: {evidence['observed']}"
+
+
 # ============================================================
-# 4. BASIC TASK PLANNER
+# 6. BASIC TASK PLANNER
 # ============================================================
 
 def plan_task(message):
@@ -348,7 +424,7 @@ def plan_task(message):
 
 
 # ============================================================
-# 5. BASIC PLAN EXECUTOR
+# 7. BASIC PLAN EXECUTOR
 # ============================================================
 
 def execute_plan(plan):
@@ -403,7 +479,7 @@ def execute_multi_step_task(message):
 
 
 # ============================================================
-# 6. AI PLANNER AND EXECUTOR
+# 8. AI PLANNER AND EXECUTOR
 # ============================================================
 
 def website_was_requested(user_request, arguments):
@@ -486,7 +562,7 @@ def execute_ai_agent_task(message):
 
 
 # ============================================================
-# 7. RESULT-AWARE TASK EXECUTION
+# 9. RESULT-AWARE TASK EXECUTION
 # ============================================================
 
 def execute_result_aware_task(message):
@@ -546,7 +622,7 @@ def execute_result_aware_task(message):
                 print("Agent decision: Stop remaining tasks.")
                 break
 
-            print("Agent observation: Internet is working.")
+            print("Agent observation: Internet check succeeded.")
             print("Agent decision: Continue with remaining tasks.")
 
         elif not succeeded:
@@ -576,7 +652,7 @@ def execute_result_aware_task(message):
 
 
 # ============================================================
-# 8. TOOL RETRY SYSTEM
+# 10. TOOL RETRY SYSTEM
 # ============================================================
 
 def execute_with_recovery(tool_name, arguments, max_retries=2):
@@ -620,7 +696,7 @@ def execute_with_recovery(tool_name, arguments, max_retries=2):
 
 
 # ============================================================
-# 9. AI-GUIDED RECOVERY WITH EXPERIENCE MEMORY
+# 11. AI-GUIDED RECOVERY WITH EXPERIENCE MEMORY
 # ============================================================
 
 def execute_with_ai_recovery(
@@ -829,7 +905,7 @@ def execute_with_ai_recovery(
 
 
 # ============================================================
-# 10. CONDITIONAL MULTI-STEP AI AGENT
+# 12. CONDITIONAL MULTI-STEP AI AGENT
 # ============================================================
 
 def execute_conditional_task(message):
@@ -908,6 +984,7 @@ def execute_conditional_task(message):
             if (
                 isinstance(item, dict)
                 and item.get("success") is True
+                and item.get("tool") != "internet_verification"
             )
         }
 
@@ -927,7 +1004,6 @@ def execute_conditional_task(message):
 
         return "\n".join(lines)
 
-    
     def finish(message_text):
         if execution_history:
             lines = []
@@ -936,8 +1012,6 @@ def execute_conditional_task(message):
                 status = item.get("status")
 
                 if status not in {"accepted", "verified", "failed"}:
-                    # Verification entries explicitly carry their status.
-                    # Ordinary action results default to accepted or failed.
                     result = item.get("result")
                     result_status = (
                         result.get("status")
@@ -965,8 +1039,10 @@ def execute_conditional_task(message):
 
         return f"{message_text}\n\nExecution history:\n{history_text}"
 
+    # --------------------------------------------------------
+    # Direct action selection
+    # --------------------------------------------------------
 
-    # For a supported direct tool request, use that tool explicitly.
     direct_action = None
 
     if needs_internet:
@@ -995,6 +1071,10 @@ def execute_conditional_task(message):
             "open_website",
             {"site_name": requested_website},
         )
+
+    # --------------------------------------------------------
+    # Single-action execution
+    # --------------------------------------------------------
 
     if direct_action and len(required_tools) <= 1:
         tool_name, arguments = direct_action
@@ -1032,7 +1112,6 @@ def execute_conditional_task(message):
             )
 
             if recovery_succeeded:
-                # Recovery must fulfill the original requested action.
                 if (
                     recovery_tool != tool_name
                     or recovery_arguments != arguments
@@ -1073,25 +1152,16 @@ def execute_conditional_task(message):
                 + ", ".join(sorted(missing_tools))
             )
 
-        # Independently verify internet connectivity after the action succeeds.
         if (
             tool_name == "check_internet"
             and "check_internet" in get_successful_tools()
         ):
             verification = verify_internet_connection()
-
-            verification_succeeded = (
-                verification.get("success") is True
-                and verification.get("status") == "verified"
-                and isinstance(verification.get("evidence"), str)
-                and bool(verification["evidence"].strip())
+            verification_succeeded = verification_evidence_is_valid(
+                verification
             )
-
-            verification_message = (
-                verification.get("evidence")
-                if verification_succeeded
-                else verification.get("error")
-                or "Independent verification could not confirm connectivity."
+            verification_message = format_verification_evidence(
+                verification
             )
 
             execution_history.append({
@@ -1099,9 +1169,7 @@ def execute_conditional_task(message):
                 "arguments": {},
                 "success": verification_succeeded,
                 "status": (
-                    "verified"
-                    if verification_succeeded
-                    else "failed"
+                    "verified" if verification_succeeded else "failed"
                 ),
                 "message": verification_message,
                 "result": verification,
@@ -1113,23 +1181,23 @@ def execute_conditional_task(message):
                     "Task completed successfully. "
                     "Internet connectivity independently verified."
                 )
+
             return finish(
-                "The internet check action succeeded, but independent "
+                "The internet-check action succeeded, but independent "
                 "verification failed."
             )
 
         return finish(
-            "The requested tool action was accepted; its outcome "
-            "has not been independently verified."
-            if "check_internet" in get_successful_tools()
-            else (
-                "Task completed successfully."
-                if succeeded
-                else "Recovery completed successfully."
-            )
-        )
+    "Task completed successfully. The action was accepted, "
+    "but its outcome has not been confirmed."
+    if succeeded
+    else "Task incomplete."
+)
 
-    # Use the AI for requests requiring a multi-step plan.
+    # --------------------------------------------------------
+    # Multi-step AI execution
+    # --------------------------------------------------------
+
     for step_number in range(1, max_steps + 1):
         try:
             decision = ask_local_ai_for_next_action(
@@ -1152,6 +1220,20 @@ def execute_conditional_task(message):
                 return finish(
                     "Task incomplete. Required tools did not succeed: "
                     + ", ".join(sorted(missing_tools))
+                )
+
+            verification_results = [
+                item
+                for item in execution_history
+                if item.get("tool", "").endswith("_verification")
+            ]
+
+            if any(
+                item.get("status") != "verified"
+                for item in verification_results
+            ):
+                return finish(
+                    "Task incomplete: one or more required verifications failed."
                 )
 
             return finish(
@@ -1181,7 +1263,8 @@ def execute_conditional_task(message):
             return finish(
                 "Website action blocked because it was not explicitly requested."
             )
-                # Ensure the selected application matches the user's request.
+
+        # Ensure the selected application matches the user's request.
         if (
             tool_name == "open_application"
             and needs_application
@@ -1200,18 +1283,18 @@ def execute_conditional_task(message):
                     f"{requested_application}, but the AI selected "
                     f"{selected_application}."
                 )
-        
-        # Ensure the AI-selected weather city matches the user's request.
+
+        # Ensure the selected weather city matches the user's request.
         if (
             tool_name == "get_weather"
             and needs_weather
             and " in " in request_lower
         ):
             requested_city = (
-    message.rsplit(" in ", 1)[1]
-    .strip()
-    .rstrip(".!?")
-)
+                message.rsplit(" in ", 1)[1]
+                .strip()
+                .rstrip(".!?")
+            )
 
             selected_city = normalized_arguments.get("city", "").strip()
 
@@ -1221,7 +1304,6 @@ def execute_conditional_task(message):
                     f"{requested_city}, but the AI selected "
                     f"{selected_city}."
                 )
-
 
         print(f"Agent step {step_number}: {tool_name}")
 
@@ -1256,7 +1338,6 @@ def execute_conditional_task(message):
             actual_arguments = recovery_arguments
             result_message = format_tool_result(result)
 
-        
         execution_history.append({
             "tool": actual_tool,
             "arguments": actual_arguments,
@@ -1266,8 +1347,6 @@ def execute_conditional_task(message):
             "attempts": attempts,
         })
 
-        # A successful recovery must perform the originally requested action.
-        # A different tool or different arguments must not count as success.
         if succeeded and (
             actual_tool != tool_name
             or actual_arguments != normalized_arguments
@@ -1280,33 +1359,20 @@ def execute_conditional_task(message):
         print(f"Agent observation: {result_message}")
 
         if not succeeded:
-            return finish(
-                "Task incomplete: " + result_message
-            )
-
+            return finish("Task incomplete: " + result_message)
 
         # Independently verify successful internet-check actions.
         if actual_tool == "check_internet":
             verification = verify_internet_connection()
-
-            verification_success = (
-                isinstance(verification, dict)
-                and verification.get("success") is True
-                and verification.get("status") == "verified"
-                and isinstance(verification.get("evidence"), str)
-                and bool(verification.get("evidence").strip())
+            verification_success = verification_evidence_is_valid(
+                verification
             )
-
-            if verification_success:
-                verification_message = verification["evidence"]
-                verification_status = "verified"
-            else:
-                verification_message = (
-                    verification.get("error", "Independent verification failed.")
-                    if isinstance(verification, dict)
-                    else "Independent verification returned an invalid result."
-                )
-                verification_status = "failed"
+            verification_message = format_verification_evidence(
+                verification
+            )
+            verification_status = (
+                "verified" if verification_success else "failed"
+            )
 
             execution_history.append({
                 "tool": "internet_verification",
@@ -1377,7 +1443,7 @@ def execute_conditional_task(message):
 
 
 # ============================================================
-# 11. DIRECT TESTING
+# 13. DIRECT TESTING
 # ============================================================
 
 if __name__ == "__main__":
