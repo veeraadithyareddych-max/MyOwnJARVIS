@@ -1,3 +1,4 @@
+
 import unittest
 from unittest.mock import patch
 
@@ -62,6 +63,7 @@ class Phase6ExecutionTests(unittest.TestCase):
         executed_tools = [
             call.args[0] for call in mock_execute.call_args_list
         ]
+
         self.assertEqual(
             executed_tools,
             ["check_internet", "get_weather"],
@@ -115,6 +117,7 @@ class Phase6ExecutionTests(unittest.TestCase):
         executed_tools = [
             call.args[0] for call in mock_execute.call_args_list
         ]
+
         self.assertNotIn("get_weather", executed_tools)
 
     @patch("agent.ask_local_ai_for_next_action")
@@ -138,6 +141,7 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertIn("Task incomplete.", result)
         self.assertIn("check_internet", result)
         self.assertIn("get_weather", result)
+
         mock_execute.assert_not_called()
 
     @patch("agent.format_tool_result")
@@ -200,6 +204,7 @@ class Phase6ExecutionTests(unittest.TestCase):
             1,
             True,
         )
+
         mock_format.return_value = "Internet is working"
 
         result = agent.execute_conditional_task(
@@ -208,9 +213,44 @@ class Phase6ExecutionTests(unittest.TestCase):
 
         self.assertIn("Task completed successfully.", result)
         self.assertIn("Internet is working", result)
+
         mock_execute.assert_called_once_with(
             "check_internet",
             {},
+        )
+
+    @patch("agent.format_tool_result")
+    @patch("agent.execute_with_ai_recovery")
+    @patch("agent.execute_with_recovery")
+    def test_wrong_application_recovery_is_not_counted_as_success(
+        self,
+        mock_execute,
+        mock_recovery,
+        mock_format,
+    ):
+        """Opening another application must not satisfy the request."""
+
+        mock_execute.return_value = (
+            self.failure_result("open_application"),
+            1,
+            False,
+        )
+
+        mock_recovery.return_value = (
+            self.success_result("open_application"),
+            True,
+            "open_application",
+            {"app_name": "calculator"},
+        )
+
+        mock_format.return_value = "Application action completed"
+
+        result = agent.execute_conditional_task("Open Notepad.")
+
+        self.assertIn("Task incomplete", result)
+        self.assertNotIn(
+            "Recovery completed successfully.",
+            result,
         )
 
 

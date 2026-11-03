@@ -910,7 +910,27 @@ def execute_conditional_task(message):
                 ],
             )
 
+            
             if recovery_succeeded:
+                # Recovery must fulfill the original requested action.
+                if (
+                    recovery_tool != tool_name
+                    or recovery_arguments != arguments
+                ):
+                    execution_history.append({
+                        "tool": recovery_tool,
+                        "arguments": recovery_arguments,
+                        "success": True,
+                        "message": format_tool_result(recovery_result),
+                        "result": recovery_result,
+                        "attempts": 1,
+                    })
+
+                    return finish(
+                        "Task incomplete: Recovery performed a different "
+                        "action than the one originally requested."
+                    )
+
                 execution_history.append({
                     "tool": recovery_tool,
                     "arguments": recovery_arguments,
@@ -924,6 +944,15 @@ def execute_conditional_task(message):
                     "Task incomplete: "
                     + format_tool_result(recovery_result)
                 )
+
+
+        missing_tools = required_tools - get_successful_tools()
+
+        if missing_tools:
+            return finish(
+                "Task incomplete. Required tools did not succeed: "
+                + ", ".join(sorted(missing_tools))
+            )
 
         return finish(
             "Task completed successfully."
