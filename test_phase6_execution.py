@@ -1,5 +1,6 @@
-
+﻿
 import unittest
+from unittest import result
 from unittest.mock import patch
 
 import agent
@@ -252,7 +253,7 @@ class Phase6ExecutionTests(unittest.TestCase):
             "Recovery completed successfully.",
             result,
         )
-    
+
     @patch("agent.verify_internet_connection")
     @patch("agent.format_tool_result")
     @patch("agent.execute_with_recovery")
@@ -421,7 +422,7 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertNotIn("Task completed successfully.", result)
 
 
-    
+
     @patch("agent.execute_with_recovery")
     @patch("agent.ask_local_ai_for_next_action")
     def test_agent_stops_after_maximum_steps(
@@ -495,6 +496,58 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertIn("Task incomplete", result)
         self.assertIn("Mumbai", result)
 
+    @patch("agent.verify_internet_connection")
+    @patch("agent.format_tool_result")
+    @patch("agent.execute_with_recovery")
+    @patch("agent.ask_local_ai_for_next_action")
+    def test_wrong_application_is_not_counted_as_success(
+        self,
+        mock_next_action,
+        mock_execute,
+        mock_format,
+        mock_verify,
+    ):
+        """The AI must not substitute another application."""
+
+        mock_next_action.side_effect = [
+            {
+                "done": False,
+                "tool": "check_internet",
+                "arguments": {},
+            },
+            {
+                "done": False,
+                "tool": "open_application",
+                "arguments": {"app_name": "Calculator"},
+            },
+        ]
+
+        mock_execute.return_value = (
+            self.success_result("check_internet"),
+            1,
+            True,
+        )
+
+        mock_format.return_value = "Action succeeded"
+
+        mock_verify.return_value = {
+            "success": True,
+            "tool": "check_internet",
+            "status": "verified",
+            "evidence": "Independent HTTP request returned HTTP 200.",
+            "error": None,
+        }
+
+        result = agent.execute_conditional_task(
+            "Check my internet connection and open Notepad."
+        )
+
+        self.assertIn("Task incomplete", result)
+        self.assertIn("notepad", result.lower())
+        self.assertIn("calculator", result.lower())
+
+        # Only the internet check should execute.
+        self.assertEqual(mock_execute.call_count, 1)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

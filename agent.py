@@ -1181,6 +1181,25 @@ def execute_conditional_task(message):
             return finish(
                 "Website action blocked because it was not explicitly requested."
             )
+                # Ensure the selected application matches the user's request.
+        if (
+            tool_name == "open_application"
+            and needs_application
+            and requested_application is not None
+        ):
+            selected_application = (
+                normalized_arguments.get("app_name", "").strip()
+            )
+
+            if (
+                selected_application.casefold()
+                != requested_application.casefold()
+            ):
+                return finish(
+                    "Task incomplete: You requested "
+                    f"{requested_application}, but the AI selected "
+                    f"{selected_application}."
+                )
         
         # Ensure the AI-selected weather city matches the user's request.
         if (
