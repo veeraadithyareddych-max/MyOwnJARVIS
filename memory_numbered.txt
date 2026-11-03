@@ -1,0 +1,1040 @@
+1:
+2:import sqlite3
+3:import json
+4:import re
+5:from datetime import datetime
+6:
+7:DATABASE_NAME = "jarvis_memory.sqlite3"
+8:
+9:
+10:# ============================================================
+11:# 1. MEMORY CATEGORY DETECTION
+12:# ============================================================
+13:
+14:
+15:
+16:def detect_memory_category(information):
+17:    """Classify memories by their most specific matching category."""
+18:    text = information.lower()
+19:
+20:    # Education: subjects and academic details
+21:    if any(word in text for word in [
+22:        "student", "college", "university", "degree",
+23:        "semester", "academic year", "studying",
+24:        "department", "engineering", "favorite subject",
+25:        "favourite subject", "maths", "mathematics",
+26:        "science subject", "school"
+27:    ]):
+28:        return "education"
+29:
+30:    # Projects and development work
+31:    if any(word in text for word in [
+32:        "project", "application", "website", "hackathon",
+33:        "duplicate prevention test", "developing",
+34:        "built an app", "building an app"
+35:    ]):
+36:        return "project"
+37:
+38:    # Goals and ambitions
+39:    if any(word in text for word in [
+40:        "goal", "aim", "want to become", "want to get",
+41:        "career target", "salary target", "plan to",
+42:        "my ambition", "i hope to", "placement"
+43:    ]):
+44:        return "goal"
+45:
+46:    # Technical skills and programming
+47:    if any(word in text for word in [
+48:        "programming language", "coding", "python",
+49:        "java", "javascript", "programming skill",
+50:        "proficient", "technical skill"
+51:    ]):
+52:        return "skill"
+53:
+54:    # Personal identity
+55:    if any(word in text for word in [
+56:        "full_name:", "nickname:", "my name",
+57:        "call me", "my birthday", "my age"
+58:    ]):
+59:        return "personal"
+60:
+61:    # Preferences and hobbies
+62:    if any(word in text for word in [
+63:        "favorite", "favourite", "i like", "i love",
+64:        "i enjoy", "i prefer", "my hobby", "i also like"
+65:    ]):
+66:        return "preference"
+67:
+68:    return "general"
+69:
+70:
+71:
+72:# ============================================================
+73:# 2. INITIALIZE DATABASE TABLES
+74:# ============================================================
+75:
+76:def initialize_memory():
+77:    """
+78:    Create required tables if they do not exist.
+79:    Existing memory and experience records are preserved.
+80:    """
+81:    connection = sqlite3.connect(DATABASE_NAME)
+82:
+83:    try:
+84:        connection.execute("""
+85:            CREATE TABLE IF NOT EXISTS memories (
+86:                id INTEGER PRIMARY KEY AUTOINCREMENT,
+87:                information TEXT NOT NULL
+88:            )
+89:        """)
+90:
+91:        connection.execute("""
+92:            CREATE TABLE IF NOT EXISTS memory_categories (
+93:                memory_id INTEGER PRIMARY KEY,
+94:                category TEXT NOT NULL,
+95:                FOREIGN KEY (memory_id) REFERENCES memories(id)
+96:            )
+97:        """)
+98:
+99:        connection.execute("""
+100:            CREATE TABLE IF NOT EXISTS current_preferences (
+101:                topic TEXT PRIMARY KEY,
+102:                value TEXT NOT NULL
+103:            )
+104:        """)
+105:
+106:        connection.execute("""
+107:            CREATE TABLE IF NOT EXISTS removed_likes (
+108:                topic TEXT NOT NULL,
+109:                item TEXT NOT NULL,
+110:                PRIMARY KEY (topic, item)
+111:            )
+112:        """)
+113:
+114:        connection.execute("""
+115:            CREATE TABLE IF NOT EXISTS experiences (
+116:                id INTEGER PRIMARY KEY AUTOINCREMENT,
+117:                user_request TEXT NOT NULL,
+118:                failed_tool TEXT NOT NULL,
+119:                failed_arguments TEXT,
+120:                error_message TEXT,
+121:                recovery_tool TEXT,
+122:                recovery_arguments TEXT,
+123:                outcome TEXT NOT NULL,
+124:                created_at TEXT NOT NULL
+125:            )
+126:        """)
+127:
+128:        connection.commit()
+129:    finally:
+130:        connection.close()
+131:
+132:
+133:def initialize_memory_categories():
+134:    """Create the memory categories table."""
+135:    initialize_memory()
+136:
+137:
+138:def categorize_existing_memories():
+139:    """
+140:    Categorize existing memories that do not yet have a category.
+141:    Existing memory text and IDs are not changed.
+142:    """
+143:    initialize_memory()
+144:    connection = sqlite3.connect(DATABASE_NAME)
+145:
+146:    try:
+147:        rows = connection.execute("""
+148:            SELECT m.id, m.information
+149:            FROM memories AS m
+150:            LEFT JOIN memory_categories AS c
+151:                ON m.id = c.memory_id
+152:            WHERE c.memory_id IS NULL
+153:        """).fetchall()
+154:
+155:        for memory_id, information in rows:
+156:            category = detect_memory_category(information)
+157:
+158:            connection.execute("""
+159:                INSERT OR IGNORE INTO memory_categories
+160:                    (memory_id, category)
+161:                VALUES (?, ?)
+162:            """, (memory_id, category))
+163:
+164:        connection.commit()
+165:        return len(rows)
+166:    finally:
+167:        connection.close()
+168:
+169:
+170:
+171:def recategorize_all_memories():
+172:    """Update category labels without changing or deleting memories."""
+173:    initialize_memory()
+174:
+175:    conn = sqlite3.connect("jarvis_memory.sqlite3")
+176:    cursor = conn.cursor()
+177:
+178:    try:
+179:        cursor.execute("SELECT id, information FROM memories")
+180:        memories = cursor.fetchall()
+181:
+182:        for memory_id, information in memories:
+183:            category = detect_memory_category(information)
+184:
+185:            cursor.execute(
+186:                """
+187:                INSERT INTO memory_categories (memory_id, category)
+188:                VALUES (?, ?)
+189:                ON CONFLICT(memory_id)
+190:                DO UPDATE SET category = excluded.category
+191:                """,
+192:                (memory_id, category)
+193:            )
+194:
+195:        conn.commit()
+196:        return len(memories)
+197:
+198:    except Exception:
+199:        conn.rollback()
+200:        raise
+201:
+202:    finally:
+203:        conn.close()
+204:
+205:
+206:def get_memories_by_category(category):
+207:    """Return memories belonging to a category, newest first."""
+208:    if not isinstance(category, str) or not category.strip():
+209:        return []
+210:
+211:    initialize_memory()
+212:    connection = sqlite3.connect(DATABASE_NAME)
+213:
+214:    try:
+215:        rows = connection.execute("""
+216:            SELECT m.id, m.information
+217:            FROM memories AS m
+218:            JOIN memory_categories AS c
+219:                ON m.id = c.memory_id
+220:            WHERE c.category = ?
+221:            ORDER BY m.id DESC
+222:        """, (category.strip().casefold(),)).fetchall()
+223:
+224:        return rows
+225:    finally:
+226:        connection.close()
+227:
+228:
+229:# ============================================================
+230:# 3. SAVE PERSONAL MEMORIES
+231:# ============================================================
+232:
+233:def save_memory(information):
+234:    """
+235:    Save information if an equivalent memory does not exist.
+236:
+237:    Duplicate checking ignores capitalization and repeated
+238:    whitespace. Existing records are never deleted or rewritten.
+239:
+240:    Returns True if saved, False if an equivalent record exists.
+241:    """
+242:    if not isinstance(information, str):
+243:        raise TypeError("Memory information must be a string.")
+244:
+245:    information = information.strip()
+246:
+247:    if not information:
+248:        raise ValueError("Memory information cannot be empty.")
+249:
+250:    def normalize(text):
+251:        return " ".join(text.split()).casefold()
+252:
+253:    normalized_information = normalize(information)
+254:
+255:    initialize_memory()
+256:    connection = sqlite3.connect(DATABASE_NAME)
+257:
+258:    try:
+259:        existing_memories = connection.execute(
+260:            "SELECT information FROM memories"
+261:        ).fetchall()
+262:
+263:        for (existing_information,) in existing_memories:
+264:            if normalize(existing_information) == normalized_information:
+265:                return False
+266:
+267:        cursor = connection.execute(
+268:            "INSERT INTO memories (information) VALUES (?)",
+269:            (information,),
+270:        )
+271:
+272:        memory_id = cursor.lastrowid
+273:        category = detect_memory_category(information)
+274:
+275:        connection.execute("""
+276:            INSERT INTO memory_categories (memory_id, category)
+277:            VALUES (?, ?)
+278:        """, (memory_id, category))
+279:
+280:        connection.commit()
+281:        return True
+282:    finally:
+283:        connection.close()
+284:
+285:
+286:def get_memories():
+287:    """Retrieve all saved personal information, oldest first."""
+288:    initialize_memory()
+289:    connection = sqlite3.connect(DATABASE_NAME)
+290:
+291:    try:
+292:        return connection.execute("""
+293:            SELECT id, information
+294:            FROM memories
+295:            ORDER BY id
+296:        """).fetchall()
+297:    finally:
+298:        connection.close()
+299:
+300:
+301:# ============================================================
+302:# 4. SEARCH RELEVANT PERSONAL MEMORIES
+303:# ============================================================
+304:
+305:def get_relevant_memories(query, limit=5, min_score=0.12):
+306:    """
+307:    Retrieve personal memories ranked by text relevance and topic.
+308:
+309:    Topic-specific questions prioritize matching memories.
+310:    This function only reads existing memory records.
+311:    """
+312:    if not isinstance(query, str) or not query.strip():
+313:        return []
+314:
+315:    if limit <= 0:
+316:        return []
+317:
+318:    query_lower = query.casefold()
+319:
+320:    stop_words = {
+321:        "the", "and", "for", "you", "are", "was", "were",
+322:        "not", "with", "this", "that", "from", "have",
+323:        "has", "had", "what", "which", "when", "where",
+324:        "how", "why", "can", "could", "would", "should",
+325:        "please", "tell", "show", "about", "your", "my",
+326:        "me", "do", "does", "did", "is", "it", "in", "on",
+327:        "to", "of", "a", "an", "i", "am", "we", "our",
+328:        "like", "likes", "liked", "love", "loves",
+329:        "favorite", "favourite", "prefer", "prefers",
+330:        "preferred", "hobby",
+331:    }
+332:
+333:    def words(text):
+334:        tokens = set(
+335:            re.findall(r"\b[a-zA-Z0-9+#.]+\b", text.casefold())
+336:        )
+337:        return tokens - stop_words
+338:
+339:    query_words = words(query)
+340:
+341:    programming_languages = {
+342:        "python", "java", "javascript", "typescript",
+343:        "c", "c++", "c#", "go", "rust", "ruby", "kotlin",
+344:        "swift", "php", "scala", "r", "dart", "perl",
+345:        "matlab", "sql",
+346:    }
+347:
+348:    academic_subjects = {
+349:        "math", "maths", "mathematics", "science",
+350:        "physics", "chemistry", "biology", "english",
+351:        "tamil", "history", "geography", "computer",
+352:        "computer science", "computer networks",
+353:        "machine learning", "deep learning",
+354:    }
+355:
+356:    topic = None
+357:
+358:    topic_phrases = {
+359:            "favorite_programming_language": (
+360:            "favorite programming language",
+361:            "favourite programming language",
+362:            "my preferred programming language",
+363:            "my preferred coding language",
+364:            "what is my favorite programming language",
+365:            "what is my favourite programming language",
+366:        ),
+367:        "programming_language": (
+368:            "programming language", "coding language",
+369:            "language do i like", "language do i prefer",
+370:            "language is my favorite", "language is my favourite",
+371:        ),
+372:        "subject": (
+373:            "favorite subject", "favourite subject",
+374:            "subject do i like", "subject do i prefer",
+375:            "academic subject",
+376:        ),
+377:        "hobby": (
+378:            "my hobby", "what is my hobby", "what are my hobbies",
+379:            "hobbies do i have",
+380:        ),
+381:        "food": (
+382:            "favorite food", "favourite food",
+383:            "food do i like", "food do i prefer",
+384:        ),
+385:        "music": (
+386:            "what music", "music do i like", "music do i prefer",
+387:            "favorite music", "favourite music", "music preference",
+388:            "music genre", "what genre",
+389:        ),
+390:        "color": (
+391:            "favorite color", "favourite color",
+392:            "favorite colour", "favourite colour",
+393:            "color do i like", "colour do i like",
+394:        ),
+395:        "sport": (
+396:            "favorite sport", "favourite sport",
+397:            "sport do i like", "sport do i prefer",
+398:        ),
+399:    }
+400:
+401:    for category, phrases in topic_phrases.items():
+402:        if any(phrase in query_lower for phrase in phrases):
+403:            topic = category
+404:            break
+405:
+406:    if topic is None:
+407:        if "programming language" in query_lower:
+408:            topic = "programming_language"
+409:        elif "subject" in query_lower:
+410:            topic = "subject"
+411:        elif "hobby" in query_lower or "hobbies" in query_lower:
+412:            topic = "hobby"
+413:        elif "food" in query_lower:
+414:            topic = "food"
+415:        elif "music" in query_lower or "song" in query_lower:
+416:            topic = "music"
+417:        elif "color" in query_lower or "colour" in query_lower:
+418:            topic = "color"
+419:        elif "sport" in query_lower:
+420:            topic = "sport"
+421:
+422:    preference_question = (
+423:        topic is not None
+424:        or any(phrase in query_lower for phrase in (
+425:            "what do i like",
+426:            "what do i prefer",
+427:            "what is my favorite",
+428:            "what is my favourite",
+429:        ))
+430:    )
+431:
+432:    def classify_memory(information):
+433:        """Return a topic explicitly supported by a memory."""
+434:        text = information.casefold().strip()
+435:        memory_words = words(text)
+436:
+437:        if text.startswith(("full_name:", "nickname:")):
+438:            return "identity"
+439:
+440:        if any(phrase in text for phrase in (
+441:            "favorite programming language",
+442:            "favourite programming language",
+443:            "my preferred programming language",
+444:            "my preferred coding language",
+445:        )):
+446:            return "favorite_programming_language"
+447:
+448:        if any(phrase in text for phrase in (
+449:            "programming language",
+450:            "coding language",
+451:        )):
+452:            return "programming_language"
+453:
+454:        if any(phrase in text for phrase in (
+455:            "favorite subject", "favourite subject",
+456:            "academic subject",
+457:        )):
+458:            return "subject"
+459:
+460:        if "hobby" in text or "hobbies" in text:
+461:            return "hobby"
+462:
+463:        if any(phrase in text for phrase in (
+464:            "favorite food", "favourite food",
+465:            "food i like", "food i prefer",
+466:        )):
+467:            return "food"
+468:
+469:        if any(phrase in text for phrase in (
+470:            "favorite color", "favourite color",
+471:            "favorite colour", "favourite colour",
+472:        )):
+473:            return "color"
+474:
+475:        if any(phrase in text for phrase in (
+476:            "favorite sport", "favourite sport",
+477:        )):
+478:            return "sport"
+479:
+480:        is_like_statement = (
+481:            text.startswith((
+482:                "i like ", "i love ", "i prefer ",
+483:                "i enjoy ", "i also like ", "i also love ",
+484:            ))
+485:            or text.startswith((
+486:                "that i like ", "that i love ", "that i prefer ",
+487:            ))
+488:            or " i like " in f" {text} "
+489:            or " i love " in f" {text} "
+490:            or " i prefer " in f" {text} "
+491:        )
+492:
+493:        if is_like_statement:
+494:            if memory_words & programming_languages:
+495:                return "programming_language"
+496:
+497:            if memory_words & {
+498:                "music", "song", "songs", "singing",
+499:                "melody", "melodies",
+500:            }:
+501:                return "music"
+502:
+503:            if memory_words & {
+504:                "pizza", "biryani", "food", "burger",
+505:                "rice", "dosa", "idli", "pasta",
+506:            }:
+507:                return "food"
+508:
+509:            if memory_words & {
+510:                "red", "blue", "green", "yellow", "black",
+511:                "white", "purple", "pink", "orange", "brown",
+512:            }:
+513:                return "color"
+514:
+515:            if memory_words & academic_subjects:
+516:                return "subject"
+517:
+518:            if memory_words & {
+519:                "cricket", "football", "tennis", "badminton",
+520:                "basketball", "volleyball", "hockey",
+521:            }:
+522:                return "sport"
+523:
+524:        return None
+525:
+526:    memories = get_memories()
+527:    ranked = []
+528:
+529:    for memory_id, information in memories:
+530:        memory_lower = information.casefold()
+531:        memory_words = words(information)
+532:        memory_topic = classify_memory(information)
+533:
+534:        if topic is not None and memory_topic != topic:
+535:            continue
+536:
+537:        intersection = len(query_words & memory_words)
+538:        union = len(query_words | memory_words)
+539:
+540:        jaccard = intersection / union if union else 0.0
+541:        coverage = (
+542:            intersection / len(query_words)
+543:            if query_words else 0.0
+544:        )
+545:        score = 0.7 * jaccard + 0.3 * coverage
+546:
+547:                # Give a relevance boost only when a memory matches
+548:        # the detected topic. Do not boost unrelated memories.
+549:        if topic is not None and memory_topic == topic:
+550:            score = max(score, 0.25)
+551:
+552:        if score <= 0 or score < min_score:
+553:            continue
+554:        is_preference = (
+555:            memory_topic is not None
+556:            or memory_lower.startswith((
+557:                "i like ", "i love ", "i prefer ",
+558:                "my favorite ", "my favourite ",
+559:                "my preferred ", "preferred ",
+560:                "favorite ", "favourite ",
+561:            ))
+562:        )
+563:
+564:        ranked.append({
+565:            "id": memory_id,
+566:            "information": information,
+567:            "score": round(score, 4),
+568:            "_is_preference": is_preference,
+569:            "_topic": memory_topic,
+570:        })
+571:
+572:    if preference_question:
+573:        ranked.sort(
+574:            key=lambda item: (
+575:                item["_is_preference"],
+576:                item["id"],
+577:                item["score"],
+578:            ),
+579:            reverse=True,
+580:        )
+581:    else:
+582:        ranked.sort(
+583:            key=lambda item: (item["score"], item["id"]),
+584:            reverse=True,
+585:        )
+586:
+587:        # Remove duplicate memory text from the retrieval results.
+588:    # This does not delete or modify database records.
+589:    unique_ranked = []
+590:    seen_information = set()
+591:
+592:    for item in ranked:
+593:        normalized_information = " ".join(
+594:            item["information"].casefold().split()
+595:        )
+596:
+597:        if normalized_information in seen_information:
+598:            continue
+599:
+600:        seen_information.add(normalized_information)
+601:        unique_ranked.append(item)
+602:
+603:    results = unique_ranked[:limit]
+604:
+605:    for item in results:
+606:        item.pop("_is_preference", None)
+607:        item.pop("_topic", None)
+608:
+609:    return results
+610:
+611:
+612:# ============================================================
+613:# 5. SAVE AGENT EXPERIENCES
+614:# ============================================================
+615:
+616:def save_experience(
+617:    user_request,
+618:    failed_tool,
+619:    failed_arguments,
+620:    error_message,
+621:    recovery_tool,
+622:    recovery_arguments,
+623:    outcome,
+624:):
+625:    """Save a failed action and its recovery outcome."""
+626:    initialize_memory()
+627:    connection = sqlite3.connect(DATABASE_NAME)
+628:
+629:    try:
+630:        connection.execute("""
+631:            INSERT INTO experiences (
+632:                user_request,
+633:                failed_tool,
+634:                failed_arguments,
+635:                error_message,
+636:                recovery_tool,
+637:                recovery_arguments,
+638:                outcome,
+639:                created_at
+640:            )
+641:            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+642:        """, (
+643:            user_request,
+644:            failed_tool,
+645:            json.dumps(failed_arguments),
+646:            error_message,
+647:            recovery_tool,
+648:            json.dumps(recovery_arguments),
+649:            outcome,
+650:            datetime.now().isoformat(timespec="seconds"),
+651:        ))
+652:
+653:        connection.commit()
+654:    finally:
+655:        connection.close()
+656:
+657:
+658:# ============================================================
+659:# 6. RETRIEVE RECENT EXPERIENCES
+660:# ============================================================
+661:
+662:def get_recent_experiences(limit=5):
+663:    """Retrieve the most recent agent experiences."""
+664:    if limit <= 0:
+665:        return []
+666:
+667:    initialize_memory()
+668:    connection = sqlite3.connect(DATABASE_NAME)
+669:    connection.row_factory = sqlite3.Row
+670:
+671:    try:
+672:        rows = connection.execute("""
+673:            SELECT *
+674:            FROM experiences
+675:            ORDER BY id DESC
+676:            LIMIT ?
+677:        """, (limit,)).fetchall()
+678:
+679:        return [dict(row) for row in rows]
+680:    finally:
+681:        connection.close()
+682:
+683:
+684:# ============================================================
+685:# 7. RETRIEVE RELEVANT EXPERIENCES
+686:# ============================================================
+687:
+688:def get_relevant_experiences(
+689:    failed_tool,
+690:    error_message="",
+691:    limit=5,
+692:    user_request="",
+693:):
+694:    """
+695:    Rank prior recovery experiences by request relevance,
+696:    error similarity, recovery arguments, outcome, and recency.
+697:    """
+698:    if limit <= 0:
+699:        return []
+700:
+701:    initialize_memory()
+702:    connection = sqlite3.connect(DATABASE_NAME)
+703:    connection.row_factory = sqlite3.Row
+704:
+705:    try:
+706:        rows = connection.execute("""
+707:            SELECT *
+708:            FROM experiences
+709:            WHERE failed_tool = ?
+710:            ORDER BY id DESC
+711:            LIMIT 100
+712:        """, (failed_tool,)).fetchall()
+713:
+714:        experiences = [dict(row) for row in rows]
+715:
+716:        stop_words = {
+717:            "the", "and", "for", "you", "are", "was",
+718:            "not", "with", "this", "that", "from",
+719:            "please", "tool", "error", "failed", "failure",
+720:            "because", "when", "then", "have", "has",
+721:        }
+722:
+723:        request_stop_words = stop_words | {
+724:            "get", "weather", "current", "today", "what",
+725:            "tell", "show", "find", "check", "want",
+726:            "need", "give", "information", "about", "in",
+727:        }
+728:
+729:        def meaningful_words(text, ignored_words=None):
+730:            tokens = set(re.findall(
+731:                r"\b[a-zA-Z]{3,}\b",
+732:                (text or "").lower(),
+733:            ))
+734:            ignored = (
+735:                stop_words if ignored_words is None
+736:                else ignored_words
+737:            )
+738:            return tokens - ignored
+739:
+740:        def decode_arguments(value):
+741:            if isinstance(value, dict):
+742:                return value
+743:
+744:            if isinstance(value, str):
+745:                try:
+746:                    decoded = json.loads(value)
+747:                    if isinstance(decoded, dict):
+748:                        return decoded
+749:                except json.JSONDecodeError:
+750:                    pass
+751:
+752:            return {}
+753:
+754:        def word_similarity(first_words, second_words):
+755:            if not first_words or not second_words:
+756:                return 0.0
+757:
+758:            intersection = len(first_words & second_words)
+759:            union = len(first_words | second_words)
+760:
+761:            if not union:
+762:                return 0.0
+763:
+764:            jaccard = intersection / union
+765:            coverage = intersection / len(first_words)
+766:
+767:            return 0.7 * jaccard + 0.3 * coverage
+768:
+769:        current_error_words = meaningful_words(error_message)
+770:        current_request_words = meaningful_words(
+771:            user_request, request_stop_words
+772:        )
+773:
+774:        ranked = []
+775:
+776:        for position, item in enumerate(experiences):
+777:            past_error_words = meaningful_words(
+778:                item.get("error_message", "")
+779:            )
+780:            past_request_words = meaningful_words(
+781:                item.get("user_request", ""),
+782:                request_stop_words,
+783:            )
+784:
+785:            error_similarity = word_similarity(
+786:                current_error_words, past_error_words
+787:            )
+788:            request_similarity = word_similarity(
+789:                current_request_words, past_request_words
+790:            )
+791:
+792:            recovery_arguments = decode_arguments(
+793:                item.get("recovery_arguments", {})
+794:            )
+795:            recovery_argument_text = json.dumps(
+796:                recovery_arguments,
+797:                ensure_ascii=False,
+798:                default=str,
+799:            )
+800:            recovery_argument_words = meaningful_words(
+801:                recovery_argument_text, request_stop_words
+802:            )
+803:
+804:            argument_similarity = word_similarity(
+805:                current_request_words, recovery_argument_words
+806:            )
+807:
+808:            outcome = str(item.get("outcome", "")).upper()
+809:
+810:            if outcome == "SUCCESS":
+811:                outcome_score = 0.10
+812:            elif outcome == "FAILURE":
+813:                outcome_score = -0.10
+814:            else:
+815:                outcome_score = 0.0
+816:
+817:            recency_score = 0.02 * (
+818:                (len(experiences) - position)
+819:                / max(len(experiences), 1)
+820:            )
+821:
+822:            total_score = (
+823:                0.25 * error_similarity
+824:                + 0.40 * request_similarity
+825:                + 0.35 * argument_similarity
+826:                + outcome_score
+827:                + recency_score
+828:            )
+829:
+830:            item["_relevance_score"] = round(total_score, 4)
+831:            ranked.append(item)
+832:
+833:        ranked.sort(
+834:            key=lambda item: (
+835:                item["_relevance_score"],
+836:                item.get("id", 0),
+837:            ),
+838:            reverse=True,
+839:        )
+840:
+841:        unique_experiences = []
+842:        seen = set()
+843:
+844:        for item in ranked:
+845:            signature = (
+846:                str(item.get("failed_tool", "")).lower(),
+847:                str(item.get("error_message", "")).strip().lower(),
+848:                str(item.get("recovery_tool", "")).lower(),
+849:                json.dumps(
+850:                    decode_arguments(
+851:                        item.get("recovery_arguments", {})
+852:                    ),
+853:                    sort_keys=True,
+854:                    default=str,
+855:                ),
+856:                str(item.get("outcome", "")).upper(),
+857:            )
+858:
+859:            if signature in seen:
+860:                continue
+861:
+862:            seen.add(signature)
+863:            unique_experiences.append(item)
+864:
+865:            if len(unique_experiences) >= limit:
+866:                break
+867:
+868:        for item in unique_experiences:
+869:            item.pop("_relevance_score", None)
+870:
+871:        return unique_experiences
+872:    finally:
+873:        connection.close()
+874:
+875:
+876:# ============================================================
+877:# 8. EXPERIENCE AND RECOVERY STATISTICS
+878:# ============================================================
+879:
+880:def get_experience_stats():
+881:    """Return statistics about recorded recovery outcomes."""
+882:    initialize_memory()
+883:    connection = sqlite3.connect(DATABASE_NAME)
+884:    connection.row_factory = sqlite3.Row
+885:
+886:    try:
+887:        totals = connection.execute("""
+888:            SELECT
+889:                COUNT(*) AS total,
+890:                SUM(CASE WHEN outcome = 'SUCCESS'
+891:                    THEN 1 ELSE 0 END) AS successes,
+892:                SUM(CASE WHEN outcome = 'FAILURE'
+893:                    THEN 1 ELSE 0 END) AS failures,
+894:                SUM(CASE WHEN outcome = 'BLOCKED'
+895:                    THEN 1 ELSE 0 END) AS blocked,
+896:                SUM(CASE WHEN outcome = 'DECLINED'
+897:                    THEN 1 ELSE 0 END) AS declined
+898:            FROM experiences
+899:        """).fetchone()
+900:
+901:        by_tool = connection.execute("""
+902:            SELECT
+903:                failed_tool,
+904:                COUNT(*) AS attempts,
+905:                SUM(CASE WHEN outcome = 'SUCCESS'
+906:                    THEN 1 ELSE 0 END) AS successes,
+907:                SUM(CASE WHEN outcome = 'FAILURE'
+908:                    THEN 1 ELSE 0 END) AS failures,
+909:                SUM(CASE WHEN outcome = 'BLOCKED'
+910:                    THEN 1 ELSE 0 END) AS blocked,
+911:                SUM(CASE WHEN outcome = 'DECLINED'
+912:                    THEN 1 ELSE 0 END) AS declined
+913:            FROM experiences
+914:            GROUP BY failed_tool
+915:            ORDER BY attempts DESC
+916:        """).fetchall()
+917:
+918:        total = totals["total"] or 0
+919:        successes = totals["successes"] or 0
+920:        failures = totals["failures"] or 0
+921:        blocked = totals["blocked"] or 0
+922:        declined = totals["declined"] or 0
+923:
+924:        attempted_recoveries = successes + failures
+925:
+926:        success_rate = (
+927:            round(successes / attempted_recoveries * 100, 2)
+928:            if attempted_recoveries else 0.0
+929:        )
+930:
+931:        return {
+932:            "total": total,
+933:            "successes": successes,
+934:            "failures": failures,
+935:            "blocked": blocked,
+936:            "declined": declined,
+937:            "success_rate": success_rate,
+938:            "by_tool": [dict(row) for row in by_tool],
+939:        }
+940:    finally:
+941:        connection.close()
+942:
+943:
+944:# ============================================================
+945:# 9. CURRENT PREFERENCES
+946:# ============================================================
+947:
+948:def set_current_preference(topic, value):
+949:    """Update the current preference without deleting history."""
+950:    if not isinstance(topic, str) or not topic.strip():
+951:        raise ValueError("Preference topic cannot be empty.")
+952:
+953:    if not isinstance(value, str) or not value.strip():
+954:        raise ValueError("Preference value cannot be empty.")
+955:
+956:    topic = topic.strip().casefold()
+957:    value = value.strip()
+958:
+959:    initialize_memory()
+960:    connection = sqlite3.connect(DATABASE_NAME)
+961:
+962:    try:
+963:        connection.execute("""
+964:            INSERT INTO current_preferences (topic, value)
+965:            VALUES (?, ?)
+966:            ON CONFLICT(topic) DO UPDATE SET value = excluded.value
+967:        """, (topic, value))
+968:
+969:        connection.commit()
+970:    finally:
+971:        connection.close()
+972:
+973:
+974:def get_current_preference(topic):
+975:    """Retrieve the current preference for a topic."""
+976:    if not isinstance(topic, str) or not topic.strip():
+977:        return None
+978:
+979:    initialize_memory()
+980:    connection = sqlite3.connect(DATABASE_NAME)
+981:
+982:    try:
+983:        row = connection.execute(
+984:            "SELECT value FROM current_preferences WHERE topic = ?",
+985:            (topic.strip().casefold(),),
+986:        ).fetchone()
+987:
+988:        return row[0] if row else None
+989:    finally:
+990:        connection.close()
+991:
+992:
+993:# ============================================================
+994:# 10. REMOVED LIKES
+995:# ============================================================
+996:
+997:def remove_like(topic, item):
+998:    """Mark an item as no longer liked without deleting history."""
+999:    if not isinstance(topic, str) or not isinstance(item, str):
+1000:        return False
+1001:
+1002:    topic = topic.strip().casefold()
+1003:    item = item.strip().casefold()
+1004:
+1005:    if not topic or not item:
+1006:        return False
+1007:
+1008:    initialize_memory()
+1009:    connection = sqlite3.connect(DATABASE_NAME)
+1010:
+1011:    try:
+1012:        connection.execute("""
+1013:            INSERT OR IGNORE INTO removed_likes (topic, item)
+1014:            VALUES (?, ?)
+1015:        """, (topic, item))
+1016:
+1017:        connection.commit()
+1018:        return True
+1019:    finally:
+1020:        connection.close()
+1021:
+1022:
+1023:def get_removed_likes(topic):
+1024:    """Return items explicitly marked as no longer liked."""
+1025:    if not isinstance(topic, str) or not topic.strip():
+1026:        return set()
+1027:
+1028:    topic = topic.strip().casefold()
+1029:    initialize_memory()
+1030:    connection = sqlite3.connect(DATABASE_NAME)
+1031:
+1032:    try:
+1033:        rows = connection.execute(
+1034:            "SELECT item FROM removed_likes WHERE topic = ?",
+1035:            (topic,),
+1036:        ).fetchall()
+1037:
+1038:        return {row[0] for row in rows}
+1039:    finally:
+1040:        connection.close()

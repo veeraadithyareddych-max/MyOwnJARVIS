@@ -252,6 +252,106 @@ class Phase6ExecutionTests(unittest.TestCase):
             "Recovery completed successfully.",
             result,
         )
+    
+    @patch("agent.verify_internet_connection")
+    @patch("agent.format_tool_result")
+    @patch("agent.execute_with_recovery")
+    def test_internet_verification_success_is_reported(
+        self,
+        mock_execute,
+        mock_format,
+        mock_verify,
+    ):
+        """Successful independent verification should be reported."""
+
+        mock_execute.return_value = (
+            self.success_result("check_internet"),
+            1,
+            True,
+        )
+
+        mock_format.return_value = "Internet is working"
+
+        mock_verify.return_value = {
+            "success": True,
+            "tool": "check_internet",
+            "status": "verified",
+            "evidence": "Independent HTTP request returned HTTP 200.",
+            "error": None,
+        }
+
+        result = agent.execute_conditional_task(
+            "Check my internet connection."
+        )
+
+        self.assertIn("Task completed successfully.", result)
+        self.assertIn("independently verified", result)
+        self.assertIn("HTTP 200", result)
+        mock_verify.assert_called_once_with()
+
+    @patch("agent.verify_internet_connection")
+    @patch("agent.format_tool_result")
+    @patch("agent.execute_with_recovery")
+    def test_internet_verification_failure_is_reported(
+        self,
+        mock_execute,
+        mock_format,
+        mock_verify,
+    ):
+        """A failed independent check must not claim verification."""
+
+        mock_execute.return_value = (
+            self.success_result("check_internet"),
+            1,
+            True,
+        )
+
+        mock_format.return_value = "Internet check action succeeded"
+
+        mock_verify.return_value = {
+            "success": False,
+            "tool": "check_internet",
+            "status": "failed",
+            "evidence": None,
+            "error": "Independent connection check failed.",
+        }
+
+        result = agent.execute_conditional_task(
+            "Check my internet connection."
+        )
+
+        self.assertIn("independent verification failed", result)
+        self.assertNotIn(
+            "Internet connectivity independently verified.",
+            result,
+        )
+        self.assertIn("Independent connection check failed.", result)
+
+    @patch("agent.verify_internet_connection")
+    @patch("agent.format_tool_result")
+    @patch("agent.execute_with_recovery")
+    def test_application_launch_is_not_internet_verified(
+        self,
+        mock_execute,
+        mock_format,
+        mock_verify,
+    ):
+        """An application launch must not trigger internet verification."""
+
+        mock_execute.return_value = (
+            self.success_result("open_application"),
+            1,
+            True,
+        )
+
+        mock_format.return_value = "Application launch request accepted"
+
+        result = agent.execute_conditional_task("Open Notepad.")
+
+        self.assertIn("Application launch request accepted", result)
+        self.assertNotIn("independently verified", result)
+        mock_verify.assert_not_called()
+
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ from memory import (
     save_experience,
     get_relevant_experiences,
 )
-
+import urllib.request
 
 # ============================================================
 # 1. TOOL REGISTRY
@@ -59,6 +59,65 @@ def make_tool_result(success, tool, data=None, error=None):
     }
 
 
+def make_verification_result(verified, tool, evidence=None, error=None):
+    """Create a separate result for independently checked outcomes."""
+
+    if verified is True and isinstance(evidence, str) and evidence.strip():
+        return {
+            "success": True,
+            "tool": tool,
+            "status": "verified",
+            "evidence": evidence,
+            "error": None,
+        }
+
+    return {
+        "success": False,
+        "tool": tool,
+        "status": "failed",
+        "evidence": None,
+        "error": error or "Independent verification evidence is missing.",
+    }
+
+def verify_internet_connection(timeout=5):
+    """Independently verify internet reachability using an HTTP request."""
+
+    url = "https://www.google.com"
+
+    try:
+        request = urllib.request.Request(
+            url,
+            method="HEAD",
+        )
+
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status_code = response.getcode()
+
+        if 200 <= status_code < 400:
+            return make_verification_result(
+                True,
+                "check_internet",
+                evidence=(
+                    f"Independent HTTP request to {url} "
+                    f"returned HTTP {status_code}."
+                ),
+            )
+
+        return make_verification_result(
+            False,
+            "check_internet",
+            error=(
+                f"Internet verification returned HTTP {status_code}."
+            ),
+        )
+
+    except Exception as error:
+        return make_verification_result(
+            False,
+            "check_internet",
+            error=f"Independent internet verification failed: {error}",
+        )
+        
 def execute_tool(tool_name, **arguments):
     """Execute an approved tool and validate its structured result."""
 
@@ -868,19 +927,44 @@ def execute_conditional_task(message):
 
         return "\n".join(lines)
 
+    
     def finish(message_text):
         if execution_history:
-            lines = [
-                f"Step {index}: {item['tool']} - "
-                f"{'SUCCESS' if item['success'] else 'FAILED'}: "
-                f"{item['message']}"
-                for index, item in enumerate(execution_history, start=1)
-            ]
+            lines = []
+
+            for index, item in enumerate(execution_history, start=1):
+                status = item.get("status")
+
+                if status not in {"accepted", "verified", "failed"}:
+                    # Verification entries explicitly carry their status.
+                    # Ordinary action results default to accepted or failed.
+                    result = item.get("result")
+                    result_status = (
+                        result.get("status")
+                        if isinstance(result, dict)
+                        else None
+                    )
+
+                    if result_status in {"accepted", "verified", "failed"}:
+                        status = result_status
+                    else:
+                        status = (
+                            "accepted"
+                            if item.get("success") is True
+                            else "failed"
+                        )
+
+                lines.append(
+                    f"Step {index}: {item['tool']} - "
+                    f"{status.upper()}: {item['message']}"
+                )
+
             history_text = "\n".join(lines)
         else:
             history_text = "No tools were executed."
 
         return f"{message_text}\n\nExecution history:\n{history_text}"
+
 
     # For a supported direct tool request, use that tool explicitly.
     direct_action = None
@@ -989,10 +1073,60 @@ def execute_conditional_task(message):
                 + ", ".join(sorted(missing_tools))
             )
 
+        # Independently verify internet connectivity after the action succeeds.
+        if (
+            tool_name == "check_internet"
+            and "check_internet" in get_successful_tools()
+        ):
+            verification = verify_internet_connection()
+
+            verification_succeeded = (
+                verification.get("success") is True
+                and verification.get("status") == "verified"
+                and isinstance(verification.get("evidence"), str)
+                and bool(verification["evidence"].strip())
+            )
+
+            verification_message = (
+                verification.get("evidence")
+                if verification_succeeded
+                else verification.get("error")
+                or "Independent verification could not confirm connectivity."
+            )
+
+            execution_history.append({
+                "tool": "internet_verification",
+                "arguments": {},
+                "success": verification_succeeded,
+                "status": (
+                    "verified"
+                    if verification_succeeded
+                    else "failed"
+                ),
+                "message": verification_message,
+                "result": verification,
+                "attempts": 1,
+            })
+
+            if verification_succeeded:
+                return finish(
+                    "Task completed successfully. "
+                    "Internet connectivity independently verified."
+                )
+            return finish(
+                "The internet check action succeeded, but independent "
+                "verification failed."
+            )
+
         return finish(
-            "Task completed successfully."
-            if succeeded
-            else "Recovery completed successfully."
+            "The requested tool action was accepted; its outcome "
+            "has not been independently verified."
+            if "check_internet" in get_successful_tools()
+            else (
+                "Task completed successfully."
+                if succeeded
+                else "Recovery completed successfully."
+            )
         )
 
     # Use the AI for requests requiring a multi-step plan.
@@ -1097,11 +1231,88 @@ def execute_conditional_task(message):
                 "Task incomplete: " + result_message
             )
 
+        # Independently verify successful internet-check actions.
+        if actual_tool == "check_internet":
+            verification = verify_internet_connection()
+
+            verification_success = (
+                isinstance(verification, dict)
+                and verification.get("success") is True
+                and verification.get("status") == "verified"
+                and isinstance(verification.get("evidence"), str)
+                and bool(verification.get("evidence").strip())
+            )
+
+            if verification_success:
+                verification_message = verification["evidence"]
+                verification_status = "verified"
+            else:
+                verification_message = (
+                    verification.get("error", "Independent verification failed.")
+                    if isinstance(verification, dict)
+                    else "Independent verification returned an invalid result."
+                )
+                verification_status = "failed"
+
+            execution_history.append({
+                "tool": "internet_verification",
+                "arguments": {},
+                "success": verification_success,
+                "status": verification_status,
+                "message": verification_message,
+                "result": verification,
+                "attempts": 1,
+            })
+
+            print(
+                f"Agent verification: "
+                f"{verification_status.upper()}: "
+                f"{verification_message}"
+            )
+
+            if not verification_success:
+                return finish(
+                    "Task incomplete: the internet-check action succeeded, "
+                    "but independent verification failed."
+                )
+
         successful_tools = get_successful_tools()
         missing_tools = required_tools - successful_tools
 
         if required_tools and not missing_tools:
-            return finish("All requested tool actions succeeded.")
+            verification_results = [
+                item
+                for item in execution_history
+                if item.get("tool", "").endswith("_verification")
+            ]
+
+            failed_verifications = [
+                item
+                for item in verification_results
+                if item.get("status") != "verified"
+            ]
+
+            if failed_verifications:
+                return finish(
+                    "Task incomplete: one or more required verifications failed."
+                )
+
+            verified_count = sum(
+                1
+                for item in verification_results
+                if item.get("status") == "verified"
+            )
+
+            if verified_count:
+                return finish(
+                    "All requested tool actions succeeded. "
+                    f"{verified_count} independent verification(s) passed."
+                )
+
+            return finish(
+                "All requested tool actions were accepted or succeeded. "
+                "Their outcomes have not all been independently verified."
+            )
 
         if not required_tools:
             return finish("Task completed successfully.")

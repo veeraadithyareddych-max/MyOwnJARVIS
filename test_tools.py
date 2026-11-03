@@ -1,9 +1,9 @@
 
 import unittest
-from unittest.mock import patch
+
 import agent
 import tools
-
+from unittest.mock import patch, MagicMock
 
 class ToolExecutionTests(unittest.TestCase):
 
@@ -140,6 +140,120 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertEqual(result["tool"], "open_application")
         self.assertEqual(result.get("status"), "failed")
 
+    def test_rejects_verified_status_without_verification_evidence(self):
+        fake_result = {
+            "success": True,
+            "tool": "fake_tool",
+            "data": "Action requested",
+            "status": "verified",
+        }
 
+        with patch.dict(
+            agent.TOOL_REGISTRY,
+            {"fake_tool": lambda: fake_result},
+        ):
+            result = agent.execute_tool("fake_tool")
+
+        self.assertFalse(result["success"])
+        self.assertIn("execution status", result["error"])
+
+    def test_rejects_missing_execution_status(self):
+        fake_result = {
+            "success": True,
+            "tool": "fake_tool",
+            "data": "Action requested",
+        }
+
+        with patch.dict(
+            agent.TOOL_REGISTRY,
+            {"fake_tool": lambda: fake_result},
+        ):
+            result = agent.execute_tool("fake_tool")
+
+        self.assertFalse(result["success"])
+        self.assertIn("execution status", result["error"])
+
+    def test_rejects_unknown_execution_status(self):
+        fake_result = {
+            "success": True,
+            "tool": "fake_tool",
+            "data": "Action requested",
+            "status": "completed",
+        }
+
+        with patch.dict(
+            agent.TOOL_REGISTRY,
+            {"fake_tool": lambda: fake_result},
+        ):
+            result = agent.execute_tool("fake_tool")
+
+        self.assertFalse(result["success"])
+        self.assertIn("execution status", result["error"])
+    
+    def test_verification_requires_evidence(self):
+        result = agent.make_verification_result(
+            True,
+            "open_application",
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIsNone(result["evidence"])
+
+    def test_verification_result_accepts_supplied_evidence(self):
+        result = agent.make_verification_result(
+            True,
+            "open_application",
+            evidence="Independent check confirmed the requested condition.",
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "verified")
+        self.assertIsNotNone(result["evidence"])
+
+    def test_failed_verification_stays_failed(self):
+        result = agent.make_verification_result(
+            False,
+            "open_application",
+            error="The requested condition could not be confirmed.",
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIsNotNone(result["error"])
+
+    @patch("agent.urllib.request.urlopen")
+    def test_internet_verification_confirms_successful_response(self, mock_urlopen):
+        mock_response = MagicMock()
+        mock_response.getcode.return_value = 200
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        result = agent.verify_internet_connection()
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "verified")
+        self.assertIn("HTTP 200", result["evidence"])
+
+    @patch("agent.urllib.request.urlopen")
+    def test_internet_verification_rejects_server_error(self, mock_urlopen):
+        mock_response = MagicMock()
+        mock_response.getcode.return_value = 500
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        result = agent.verify_internet_connection()
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+
+    @patch("agent.urllib.request.urlopen")
+    def test_internet_verification_handles_connection_error(self, mock_urlopen):
+        mock_urlopen.side_effect = OSError("Connection unavailable")
+
+        result = agent.verify_internet_connection()
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("Connection unavailable", result["error"])
+        
 if __name__ == "__main__":
     unittest.main(verbosity=2)

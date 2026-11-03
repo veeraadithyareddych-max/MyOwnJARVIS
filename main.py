@@ -1,8 +1,10 @@
 
 # MyOwnJARVIS - Main Assistant
 # Handles conversation, memory, AI planning, tool execution,
-# preference saving, preference correction, and memory inspection.
+# preference saving, preference correction, memory inspection,
+# Java code analysis, and persistent Java example storage.
 
+import re
 from datetime import datetime
 
 from memory import (
@@ -23,6 +25,11 @@ from agent import (
 )
 from llm import ask_local_ai
 from memory_commands import handle_memory_command
+from java_examples import (
+    initialize_java_examples,
+    save_java_examples_from_response,
+    get_latest_java_example,
+)
 
 
 # ---------------------------------------------------------
@@ -235,10 +242,12 @@ def handle_preference_correction(message):
         "forget my favourite colour": ("color", "favorite color"),
         "forget my favorite subject": ("subject", "favorite subject"),
         "forget my favourite subject": ("subject", "favorite subject"),
-        "forget my favorite programming language":
-            ("programming_language", "favorite programming language"),
-        "forget my favourite programming language":
-            ("programming_language", "favorite programming language"),
+        "forget my favorite programming language": (
+            "programming_language", "favorite programming language",
+        ),
+        "forget my favourite programming language": (
+            "programming_language", "favorite programming language",
+        ),
         "forget my hobby": ("hobby", "hobby"),
         "forget my music preference": ("music", "music preference"),
     }
@@ -389,6 +398,7 @@ def answer_likes_question(message):
     }
 
     liked_items = []
+
     like_prefixes = (
         "i also like ",
         "i also love ",
@@ -407,7 +417,6 @@ def answer_likes_question(message):
             information.casefold().strip().rstrip(".!?").split()
         )
 
-        # Keep explicit favorites separate from generic likes.
         if saved_text.startswith((
             "my favorite ",
             "my favourite ",
@@ -615,13 +624,11 @@ def answer_preference_question(message):
 
     current_value = get_current_preference(topic)
 
-    # A forgotten marker prevents older memories from restoring a value.
     if current_value == "__forgotten__":
         return unknown_messages[topic]
 
     memories = get_memories()
 
-    # Explicit favorites take precedence only for favorite questions.
     if (
         topic == "programming_language"
         and (
@@ -643,12 +650,16 @@ def answer_preference_question(message):
                     candidate = candidate.rstrip(".!? ").strip()
 
                     if candidate in known_values[topic]:
-                        return (
-                            "Your favorite programming language is "
-                            f"{candidate.title() if candidate != 'c++' else 'C++'}."
+                        display_candidate = (
+                            "C++" if candidate == "c++"
+                            else candidate.title()
                         )
 
-    # Current preference applies to general preference questions.
+                        return (
+                            "Your favorite programming language is "
+                            f"{display_candidate}."
+                        )
+
     if current_value:
         return f"Your {topic_labels[topic]} is {current_value}."
 
@@ -711,11 +722,9 @@ def answer_preference_question(message):
 # MEMORY PROMPT FOR LOCAL AI
 # ---------------------------------------------------------
 
-
 def build_memory_prompt(user_question, relevant_memories):
     """Build a context-aware prompt using saved memories safely."""
 
-    # Handle missing or invalid memory results safely.
     if not isinstance(relevant_memories, (list, tuple)):
         relevant_memories = []
 
@@ -727,7 +736,6 @@ def build_memory_prompt(user_question, relevant_memories):
         and item.get("information", "").strip()
     ]
 
-    # Newer memory IDs appear first so recent information is prominent.
     ordered_memories = sorted(
         valid_memories,
         key=lambda item: (
@@ -779,6 +787,611 @@ Answer:
 """.strip()
 
 
+# ---------------------------------------------------------
+# SHORT-TERM CONVERSATION HISTORY
+# ---------------------------------------------------------
+
+SESSION_CONVERSATION_HISTORY = []
+MAX_CONVERSATION_TURNS = 6
+
+
+# ---------------------------------------------------------
+# ANALYZE RECENT JAVA CODE
+# ---------------------------------------------------------
+
+def build_latest_java_code_facts():
+    """
+    Analyze recent Java code in conversation history.
+    If no recent Java example exists, analyze the latest persisted example.
+    """
+
+    def extract_classes(java_code):
+        classes = {}
+
+        class_pattern = re.compile(
+            r"\bclass\s+(\w+)(?:\s+extends\s+(\w+))?"
+        )
+
+        method_pattern = re.compile(
+            r"(?m)^[ \t]*"
+            r"(?:(?:public|protected|private|static|final|abstract|"
+            r"synchronized|native|default)\s+)*"
+            r"(?:[\w$<>\[\],.?]+\s+)+"
+            r"(\w+)\s*\([^;{}]*\)\s*"
+            r"(?:throws\s+[\w$., ]+\s*)?\{"
+        )
+
+        for match in class_pattern.finditer(java_code):
+            class_name = match.group(1)
+            parent_name = match.group(2)
+
+            opening_brace = java_code.find("{", match.end())
+
+            if opening_brace == -1:
+                continue
+
+            depth = 0
+            closing_brace = None
+
+            for index in range(opening_brace, len(java_code)):
+                if java_code[index] == "{":
+                    depth += 1
+                elif java_code[index] == "}":
+                    depth -= 1
+
+                    if depth == 0:
+                        closing_brace = index
+                        break
+
+            if closing_brace is None:
+                continue
+
+            body = java_code[opening_brace + 1:closing_brace]
+
+            methods = {
+                method_match.group(1)
+                for method_match in method_pattern.finditer(body)
+            }
+
+            classes[class_name] = {
+                "parent": parent_name,
+                "methods": methods,
+            }
+
+        return classes
+
+    recent_exchanges = list(
+        SESSION_CONVERSATION_HISTORY[-MAX_CONVERSATION_TURNS:]
+    )
+
+    has_recent_java_code = any(
+        isinstance(assistant_text, str)
+        and re.search(
+            r"```java[ \t]*\r?\n.*?```",
+            assistant_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        for user_text, assistant_text in recent_exchanges
+    )
+
+    if not has_recent_java_code:
+        try:
+            saved_java_code = get_latest_java_example()
+        except (OSError, ValueError, TypeError):
+            saved_java_code = None
+
+        if saved_java_code:
+            recent_exchanges.append((
+                "Previously saved Java example",
+                f"```java\n{saved_java_code}\n```",
+            ))
+
+    for user_text, assistant_text in reversed(recent_exchanges):
+        if not isinstance(assistant_text, str):
+            continue
+
+        code_blocks = re.findall(
+            r"```java[ \t]*\r?\n(.*?)```",
+            assistant_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+        for java_code in reversed(code_blocks):
+            classes = extract_classes(java_code)
+
+            for class_name, details in classes.items():
+                parent_name = details["parent"]
+
+                if not parent_name or parent_name not in classes:
+                    continue
+
+                parent_methods = classes[parent_name]["methods"]
+                child_methods = details["methods"]
+
+                overridden = sorted(parent_methods & child_methods)
+                inherited = sorted(parent_methods - child_methods)
+                subclass_specific = sorted(child_methods - parent_methods)
+
+                facts = [
+                    f"Class {class_name} extends {parent_name}.",
+                    (
+                        f"{parent_name} declares and defines these methods "
+                        f"in its class body: "
+                        f"{', '.join(sorted(parent_methods)) or 'none'}."
+                    ),
+                    (
+                        f"{class_name} declares and defines these methods "
+                        f"in its class body: "
+                        f"{', '.join(sorted(child_methods)) or 'none'}."
+                    ),
+                ]
+
+                if inherited:
+                    inherited_list = ", ".join(inherited)
+
+                    facts.append(
+                        f"These parent methods are inherited without "
+                        f"being overridden in this example: "
+                        f"{inherited_list}."
+                    )
+
+                    facts.append(
+                        f"{class_name} inherits these methods from "
+                        f"{parent_name}: {inherited_list}."
+                    )
+
+                    facts.append(
+                        f"{parent_name} declares these methods; "
+                        f"{class_name} inherits them without overriding "
+                        f"them in this example: {inherited_list}."
+                    )
+
+                if overridden:
+                    facts.append(
+                        f"{class_name} overrides these parent methods: "
+                        f"{', '.join(overridden)}."
+                    )
+                else:
+                    facts.append(
+                        f"{class_name} overrides no methods declared "
+                        f"in {parent_name}."
+                    )
+
+                if subclass_specific:
+                    facts.append(
+                        f"These methods are specific to {class_name} "
+                        f"and are not overrides of parent methods: "
+                        f"{', '.join(subclass_specific)}."
+                    )
+
+                return "\n".join(facts)
+
+    return (
+        "No recent Java inheritance example could be analyzed "
+        "automatically. Do not invent code facts."
+    )
+
+
+# ---------------------------------------------------------
+# VALIDATE PROGRAMMING RESPONSES
+# ---------------------------------------------------------
+
+
+def validate_programming_response(
+    user_message,
+    response=None,
+    conversation_prompt=None,
+):
+    """
+    Validate Java explanations against the latest code facts.
+    Preserve general answers and correct only explanations that
+    actually discuss the analyzed Java inheritance example.
+    """
+    import re
+
+    # Support both the three-argument application call and
+    # direct two-argument calls used by tests.
+    if response is None:
+        response = user_message
+        user_message = ""
+
+    if not isinstance(response, str):
+        return response
+
+    # Do not validate or rewrite unrelated general answers.
+    user_text = (
+        user_message.casefold()
+        if isinstance(user_message, str)
+        else ""
+    )
+    response_text = response.casefold()
+
+    programming_context = (
+        "java" in user_text
+        or "inheritance" in user_text
+        or "override" in user_text
+        or "overriding" in user_text
+        or "method" in user_text
+        or "class " in user_text
+        or "```java" in response_text
+        or "extends " in response_text
+        or "overriding " in response_text
+        or "overrides " in response_text
+    )
+
+    if not programming_context:
+        return response
+
+    facts = build_latest_java_code_facts()
+
+    if not facts:
+        return response
+
+    def extract_class_relationship(text):
+        match = re.search(
+            r"Class\s+(\w+)\s+extends\s+(\w+)",
+            text,
+            re.IGNORECASE,
+        )
+
+        if not match:
+            return None, None
+
+        return match.group(1), match.group(2)
+
+    child_class, parent_class = extract_class_relationship(facts)
+
+    if not child_class or not parent_class:
+        return response
+
+    def extract_methods(pattern):
+        match = re.search(pattern, facts, re.IGNORECASE)
+
+        if not match:
+            return set()
+
+        return {
+            method.strip().lower()
+            for method in match.group(1).split(",")
+            if method.strip() and method.strip().lower() != "none"
+        }
+
+    parent_methods = extract_methods(
+        rf"{re.escape(parent_class)} declares and defines these methods "
+        rf"in its class body:\s*([^\n.]+)"
+    )
+
+    child_methods = extract_methods(
+        rf"{re.escape(child_class)} declares and defines these methods "
+        rf"in its class body:\s*([^\n.]+)"
+    )
+
+    overridden_methods = extract_methods(
+        rf"{re.escape(child_class)} overrides these parent methods:\s*"
+        rf"([^\n.]+)"
+    )
+
+    subclass_specific_methods = extract_methods(
+        rf"These methods are specific to {re.escape(child_class)} "
+        rf"and are not overrides of parent methods:\s*([^\n.]+)"
+    )
+
+    # If the facts explicitly state that there are no overrides,
+    # do not infer an override from incomplete method information.
+    explicit_no_overrides = bool(
+        re.search(
+            rf"\b{re.escape(child_class)} overrides no methods "
+            rf"declared in {re.escape(parent_class)}\b",
+            facts,
+            re.IGNORECASE,
+        )
+    )
+
+    if not overridden_methods and not explicit_no_overrides:
+        overridden_methods = parent_methods & child_methods
+
+    overridden_methods &= child_methods
+    overridden_methods &= parent_methods
+
+    response_lower = response.casefold()
+    problems = []
+
+    def mentions_override(text, method):
+        method_pattern = re.escape(method.casefold())
+
+        patterns = (
+            rf"\boverriding\s+{method_pattern}\s*\(\s*\)",
+            rf"\boverrides?\s+{method_pattern}\s*\(\s*\)",
+            rf"\boverride\s+{method_pattern}\s*\(\s*\)",
+        )
+
+        return any(
+            re.search(pattern, text, re.IGNORECASE)
+            for pattern in patterns
+        )
+
+    # Require an explicit explanation of each verified override.
+    for method in overridden_methods:
+        if not mentions_override(response_lower, method):
+            problems.append(
+                f"The explanation must explicitly state that "
+                f"{child_class} overrides {method}() from {parent_class}."
+            )
+
+    # Catch claims that subclass-specific methods are overrides.
+    for method in subclass_specific_methods:
+        if mentions_override(response_lower, method):
+            problems.append(
+                f"{child_class} does not override {method}(); "
+                f"that method is specific to {child_class}."
+            )
+
+    # Catch incorrect claims about any child method that does not
+    # exist in the parent's declared-method set.
+    for method in child_methods - parent_methods:
+        if mentions_override(response_lower, method):
+            problem = (
+                f"{child_class} does not override {method}(); "
+                f"{method}() is not declared by {parent_class}."
+            )
+
+            if problem not in problems:
+                problems.append(problem)
+
+    # Detect general claims that the child overrides parent methods.
+    if not overridden_methods:
+        false_general_claim = re.search(
+            rf"\b{re.escape(child_class)}\s+"
+            rf"(?:overrides?|is overriding)\s+"
+            rf"(?:the\s+)?(?:parent\s+)?methods?\b",
+            response_lower,
+            re.IGNORECASE,
+        )
+
+        if false_general_claim:
+            problems.append(
+                f"{child_class} overrides no methods declared by "
+                f"{parent_class}."
+            )
+
+    # Keep an already-correct answer exactly as it was produced.
+    if not problems:
+        return response
+
+    correction_prompt = (
+        "Correct the following Java explanation using only the verified "
+        "facts below. Do not invent methods or relationships. Explicitly "
+        "explain every actual override, and distinguish subclass-specific "
+        "methods from overridden methods. If there are no overrides, "
+        "clearly state that the child class overrides no methods declared "
+        "by the parent class. Return only the corrected explanation.\n\n"
+        f"Verified facts:\n{facts}\n\n"
+        "Problems to fix:\n"
+        + "\n".join(problems)
+        + "\n\nOriginal explanation:\n"
+        + response
+    )
+
+    try:
+        corrected_response = ask_local_ai(correction_prompt)
+    except Exception:
+        corrected_response = ""
+
+    if not isinstance(corrected_response, str):
+        corrected_response = ""
+
+    corrected_lower = corrected_response.casefold().strip()
+    correction_is_wrong = not corrected_lower
+
+    # Verify that the correction explains every actual override.
+    for method in overridden_methods:
+        if not mentions_override(corrected_lower, method):
+            correction_is_wrong = True
+            break
+
+    # Verify that the correction does not invent overrides.
+    for method in child_methods - parent_methods:
+        if mentions_override(corrected_lower, method):
+            correction_is_wrong = True
+            break
+
+    # If no overrides exist, reject any remaining explicit claim that
+    # the child overrides parent methods.
+    if not overridden_methods:
+        false_general_claim = re.search(
+            rf"\b{re.escape(child_class)}\s+"
+            rf"(?:overrides?|is overriding)\s+"
+            rf"(?:the\s+)?(?:parent\s+)?methods?\b",
+            corrected_lower,
+            re.IGNORECASE,
+        )
+
+        if false_general_claim:
+            correction_is_wrong = True
+
+    if not correction_is_wrong:
+        return corrected_response
+
+    def format_methods(methods):
+        return ", ".join(
+            f"{method}()" for method in sorted(methods)
+        )
+
+    parent_text = format_methods(parent_methods) or "no methods"
+    child_text = format_methods(child_methods) or "no methods"
+
+    sentences = [
+        f"The {parent_class} class declares and defines {parent_text}."
+    ]
+
+    if overridden_methods:
+        sentences.append(
+            f"The {child_class} class declares and defines {child_text}, "
+            f"overriding {format_methods(overridden_methods)} from "
+            f"{parent_class}."
+        )
+    else:
+        sentences.append(
+            f"The {child_class} class declares and defines {child_text} "
+            f"and does not override any methods declared by "
+            f"{parent_class}."
+        )
+
+    if subclass_specific_methods:
+        sentences.append(
+            f"{format_methods(subclass_specific_methods)} are specific "
+            f"to {child_class} and are not overrides of methods declared "
+            f"by {parent_class}."
+        )
+
+    return " ".join(sentences)
+
+
+# ---------------------------------------------------------
+# BUILD CONVERSATION PROMPT
+# ---------------------------------------------------------
+
+def build_conversation_prompt(user_message, base_prompt=None):
+    """Build a context-aware prompt with programming safeguards."""
+
+    history_lines = []
+
+    for user_text, assistant_text in SESSION_CONVERSATION_HISTORY[
+        -MAX_CONVERSATION_TURNS:
+    ]:
+        history_lines.append(f"User: {user_text}")
+        history_lines.append(f"JARVIS: {assistant_text}")
+
+    conversation_context = "\n".join(history_lines)
+
+    if not conversation_context:
+        conversation_context = "This is the start of the conversation."
+
+    task_context = base_prompt if base_prompt else user_message
+    java_code_facts = build_latest_java_code_facts()
+
+    return f"""
+You are JARVIS, a reliable personal AI assistant.
+
+PERSONALITY:
+- Be friendly, calm, direct, and conversational.
+- Avoid unnecessary openings such as "Certainly!" or "Sure!".
+- Answer simple questions concisely.
+- Never claim to have tested or compiled code unless you actually did.
+
+CONVERSATION CONTEXT:
+- Use recent conversation history to resolve follow-up questions.
+- The current request takes priority over older requests.
+- "Another example" means a genuinely different example.
+- "Short example" means the smallest useful example.
+- "Explain the most recent code" refers to the latest relevant code example.
+- Explain only classes, methods, variables, and behavior that exist in that
+  specific example.
+- Do not mix unrelated older examples into the current explanation.
+- If a reference is genuinely ambiguous, ask one brief clarification question.
+- Do not invent personal details or memories.
+
+ANSWER FORMATTING:
+- If the user asks for exactly three sentences, produce exactly three
+  complete sentences.
+- Check spacing and punctuation before responding.
+- Do not join words accidentally, such as "boththe".
+- If asked for a summary, summarize the latest relevant example only.
+- If asked for line-by-line explanation, explain the actual code in order.
+- Avoid repeating a complete answer when the user requests only a small change.
+
+PROGRAMMING CORRECTNESS:
+- Follow the programming language requested by the user.
+- Prefer simple, beginner-friendly, self-contained examples.
+- Make code, explanation, comments, and output agree.
+- Check every method call against the declared variable type.
+- Check that all variables and methods exist.
+- Do not describe code as compilable unless it is valid as written.
+- When uncertain about correctness, simplify the example instead of guessing.
+
+JAVA RULES:
+- A variable's declared type determines which methods can be called directly.
+- If code declares `Vehicle myCar = new Car();`, calls such as
+  `myCar.move()` are valid only if `move()` is declared in Vehicle or
+  inherited by Vehicle.
+- Do not call `myCar.honk()` through a Vehicle reference if Vehicle does
+  not declare `honk()`, even when the object created is a Car.
+- If the example needs both `move()` and `honk()`, use
+  `Car myCar = new Car();` when Car declares `honk()` and inherits `move()`.
+- Alternatively, show only methods available through the parent reference.
+- Do not add casts unnecessarily.
+- A method is overridden only when the subclass provides a compatible
+  implementation of a method declared in its superclass.
+- A new subclass-specific method is not an override merely because it belongs
+  to a subclass.
+- Do not claim that a class inherits a method that does not exist.
+- For standalone Java examples, include a valid class structure and main method.
+- Ensure the example's explanation agrees with the code.
+- For Java methods with a body, distinguish declaration from definition:
+  the method is declared by its signature and defined by its body.
+- Never say that a method with a body is only declared and not defined.
+- A superclass declares its own methods; a subclass may inherit accessible
+  superclass methods unless it overrides them.
+- A subclass-specific method is not an override when the superclass
+  does not declare a compatible method.
+- When generating a single-file Java example, only one top-level class
+  may be public. Use package-private access for the other top-level classes.
+- If asked for exactly three sentences, return exactly three sentences
+  without a preamble or introductory sentence.
+
+PYTHON RULES:
+- Use valid Python syntax.
+- Do not introduce a Java-style Main class.
+- Include imports only when needed.
+
+MEMORY AND IDENTITY:
+- Distinguish the user's name and nickname from JARVIS's identity.
+- "What is your name?" asks about JARVIS.
+- "What is my name?" asks about the user's saved name.
+- "What is my nickname?" asks about the user's saved nickname.
+- Use personal details only when supported by available memory or context.
+
+RECENT CONVERSATION:
+{conversation_context}
+
+ANALYZED JAVA CODE FACTS:
+{java_code_facts}
+
+JAVA EXPLANATION SAFEGUARD:
+- Treat the analyzed Java code facts above as authoritative for the
+  specific example they describe.
+- Never claim that a method is overridden unless the analyzed facts
+  identify it as an override.
+- Do not describe inherited methods as overridden methods.
+- Do not describe a subclass-specific method as polymorphism by itself.
+- When explaining or summarizing the analyzed example, use the actual
+  method names and relationships from the code facts.
+- If the facts identify no overridden methods, explicitly explain
+  inheritance rather than method overriding.
+
+CURRENT REQUEST AND RELEVANT CONTEXT:
+{task_context}
+
+Before answering, check:
+1. Am I answering the latest request?
+2. Am I using the correct recent example?
+3. Are the code and explanation consistent?
+4. Are all method calls valid for their declared types?
+5. Did I follow the requested answer length and format?
+
+Additional rules:
+- Distinguish declaring a method from inheriting a method.
+- The superclass declares methods that it defines in its own class body.
+- The subclass inherits accessible superclass methods unless it overrides them.
+- Do not say that both the superclass and subclass inherit a method when the superclass declares it and the subclass inherits it.
+- When summarizing inheritance, explicitly identify which class declares each method
+  and which class inherits it.
+- Count object creation statements accurately. Do not describe multiple
+  instances if the code creates only one.
+
+Provide the answer now.
+""".strip()
+
 
 # ---------------------------------------------------------
 # MAIN CONVERSATION HANDLER
@@ -800,7 +1413,9 @@ def respond_to_user(message):
     if normalized_message in ["how are you", "how are you doing"]:
         return "I'm running properly and ready to help you!"
 
-    if normalized_message in ["what can you do", "your features", "features"]:
+    if normalized_message in {
+        "what can you do", "your features", "features",
+    }:
         return (
             "I can answer questions using my local AI model, remember "
             "information, plan tasks, open approved applications and "
@@ -849,6 +1464,10 @@ def respond_to_user(message):
             "- exit"
         )
 
+    # -----------------------------------------------------
+    # EXPLICIT MEMORY COMMANDS
+    # -----------------------------------------------------
+
     if normalized_message.startswith("remember "):
         information = original_message[len("remember "):].strip()
 
@@ -862,18 +1481,44 @@ def respond_to_user(message):
 
         return f"I'll remember that: {information}"
 
+    # -----------------------------------------------------
+    # DISPLAY MEMORIES
+    # -----------------------------------------------------
+
     if normalized_message in {
-        "what do you remember about me", "show my memories", "show memory",
+        "what do you remember about me",
+        "show my memories",
+        "show memory",
     }:
         memories = get_memories()
 
         if not memories:
             return "I haven't saved anything yet."
 
+        unique_memories = []
+        seen_memories = set()
+
+        for memory_id, information in reversed(memories):
+            normalized_information = " ".join(
+                information.casefold().split()
+            )
+
+            if normalized_information in seen_memories:
+                continue
+
+            seen_memories.add(normalized_information)
+            unique_memories.append((memory_id, information))
+
+        unique_memories.reverse()
+
         return "Here is what I remember:\n" + "\n".join(
             f"{memory_id}. {information}"
-            for memory_id, information in memories
+            for memory_id, information in unique_memories
         )
+
+    # -----------------------------------------------------
+    # NAME AND NICKNAME
+    # -----------------------------------------------------
 
     if normalized_message.startswith("my name is "):
         full_name = original_message[len("my name is "):].strip()
@@ -896,7 +1541,10 @@ def respond_to_user(message):
     if normalized_message in {"what is my name", "what's my name"}:
         for memory_id, information in reversed(get_memories()):
             if information.startswith("full_name: "):
-                return "Your full name is " + information[len("full_name: "):]
+                return (
+                    "Your full name is "
+                    + information[len("full_name: "):]
+                )
 
         return "I don't know your full name yet."
 
@@ -909,42 +1557,66 @@ def respond_to_user(message):
 
         return "You haven't chosen a nickname yet."
 
-    # Handle removals and forgotten preferences before saving.
+    # -----------------------------------------------------
+    # PREFERENCE CORRECTION AND SAVING
+    # -----------------------------------------------------
+
     correction_response = handle_preference_correction(original_message)
 
     if correction_response is not None:
         return correction_response
 
-    # Save explicit preferences and generic likes.
     automatic_memory_response = save_explicit_preference(original_message)
 
     if automatic_memory_response is not None:
         return automatic_memory_response
 
-    # Answer questions about generic likes.
+    # -----------------------------------------------------
+    # QUESTIONS ABOUT LIKES AND PREFERENCES
+    # -----------------------------------------------------
+
     likes_answer = answer_likes_question(original_message)
 
     if likes_answer is not None:
         return likes_answer
 
-    # Answer questions about favorites and preferences.
     preference_answer = answer_preference_question(original_message)
 
     if preference_answer is not None:
         return preference_answer
 
-    # General questions use relevant memories and local AI.
+    # -----------------------------------------------------
+    # GENERAL AI RESPONSE
+    # -----------------------------------------------------
+
     relevant_memories = get_relevant_memories(
         original_message,
         limit=5,
         min_score=0.0,
     )
 
-    if not relevant_memories:
-        return ask_local_ai(original_message)
+    memory_prompt = None
 
-    prompt = build_memory_prompt(original_message, relevant_memories)
-    return ask_local_ai(prompt)
+    if relevant_memories:
+        memory_prompt = build_memory_prompt(
+            original_message,
+            relevant_memories,
+        )
+
+    conversation_prompt = build_conversation_prompt(
+        original_message,
+        memory_prompt,
+    )
+
+    response = ask_local_ai(conversation_prompt)
+
+    response = validate_programming_response(
+        original_message,
+        response,
+        conversation_prompt,
+    )
+
+    return response
 
 
 # ---------------------------------------------------------
@@ -975,14 +1647,20 @@ def handle_intent(message):
     if intent == "open_app":
         for app_name in ["notepad", "calculator", "paint"]:
             if app_name in message_lower:
-                return execute_tool("open_application", app_name=app_name)
+                return execute_tool(
+                    "open_application",
+                    app_name=app_name,
+                )
 
         return "I can open Notepad, Calculator, or Paint."
 
     if intent == "open_website":
         for site_name in ["google", "youtube", "github"]:
             if site_name in message_lower:
-                return execute_tool("open_website", site_name=site_name)
+                return execute_tool(
+                    "open_website",
+                    site_name=site_name,
+                )
 
         return "I can open Google, YouTube, or GitHub."
 
@@ -1066,12 +1744,42 @@ def main():
 
             if response is None:
                 response = respond_to_user(user_message)
+
         else:
             response = respond_to_user(user_message)
+
+        # -------------------------------------------------
+        # PERSIST JAVA CODE EXAMPLES
+        # -------------------------------------------------
+
+        try:
+            save_java_examples_from_response(str(response))
+        except (OSError, ValueError, TypeError) as error:
+            print(
+                "JARVIS: Warning - couldn't save the Java example:",
+                error,
+            )
+
+        # -------------------------------------------------
+        # SAVE SHORT-TERM CONVERSATION HISTORY
+        # -------------------------------------------------
+
+        SESSION_CONVERSATION_HISTORY.append(
+            (user_message, str(response))
+        )
+
+        SESSION_CONVERSATION_HISTORY[:] = (
+            SESSION_CONVERSATION_HISTORY[-MAX_CONVERSATION_TURNS:]
+        )
 
         print("JARVIS:", response)
 
 
+# ---------------------------------------------------------
+# START APPLICATION
+# ---------------------------------------------------------
+
 if __name__ == "__main__":
     initialize_memory()
+    initialize_java_examples()
     main()
