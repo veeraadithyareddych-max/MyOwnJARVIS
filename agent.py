@@ -72,20 +72,50 @@ def execute_tool(tool_name, **arguments):
     try:
         result = tool(**arguments)
 
-        if (
-            isinstance(result, dict)
-            and "success" in result
-            and "tool" in result
-        ):
-            # Reject results that claim to come from another tool.
-            if result.get("tool") != tool_name:
+        
+        if not isinstance(result, dict):
+            return make_tool_result(
+                False,
+                tool_name,
+                error="The tool returned an invalid result format.",
+            )
+
+        # Reject results that claim to come from another tool.
+        if result.get("tool") != tool_name:
+            return make_tool_result(
+                False,
+                tool_name,
+                error="The tool returned a mismatched tool name.",
+            )
+
+        # The success field must be an actual Boolean.
+        if type(result.get("success")) is not bool:
+            return make_tool_result(
+                False,
+                tool_name,
+                error="The tool returned an invalid success flag.",
+            )
+
+        # Successful results must contain meaningful result data.
+        if result["success"] is True:
+            if result.get("data") is None:
                 return make_tool_result(
                     False,
                     tool_name,
-                    error="The tool returned a mismatched tool name.",
+                    error="The tool reported success without result data.",
                 )
 
-            return result
+        # Failed results must explain the failure.
+        else:
+            if not isinstance(result.get("error"), str) or not result["error"].strip():
+                return make_tool_result(
+                    False,
+                    tool_name,
+                    error="The tool failed without providing an error message.",
+                )
+
+        return result
+
 
         return make_tool_result(
             False,
