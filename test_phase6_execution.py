@@ -353,6 +353,73 @@ class Phase6ExecutionTests(unittest.TestCase):
         mock_verify.assert_not_called()
 
 
+    @patch("agent.verify_internet_connection")
+    @patch("agent.format_tool_result")
+    @patch("agent.execute_with_ai_recovery")
+    @patch("agent.execute_with_recovery")
+    @patch("agent.ask_local_ai_for_next_action")
+    def test_wrong_weather_city_recovery_does_not_satisfy_request(
+        self,
+        mock_next_action,
+        mock_execute,
+        mock_ai_recovery,
+        mock_format,
+        mock_verify,
+    ):
+        """Recovery for a different city must not satisfy the original request."""
+
+        mock_next_action.side_effect = [
+            {
+                "done": False,
+                "tool": "check_internet",
+                "arguments": {},
+                "message": "Check internet",
+            },
+            {
+                "done": False,
+                "tool": "get_weather",
+                "arguments": {"city": "Mumbai"},
+                "message": "Get Mumbai weather",
+            },
+            {
+                "done": True,
+                "message": "Task completed successfully.",
+            },
+        ]
+
+        mock_execute.side_effect = [
+            (self.success_result("check_internet"), 1, True),
+            (self.failure_result("get_weather"), 1, False),
+        ]
+
+        mock_ai_recovery.return_value = (
+            self.success_result("get_weather"),
+            True,
+            "get_weather",
+            {"city": "Delhi"},
+        )
+
+        mock_format.side_effect = [
+            "Internet is working",
+            "Mumbai weather request failed",
+            "Delhi weather retrieved",
+        ]
+
+        mock_verify.return_value = {
+            "success": True,
+            "tool": "check_internet",
+            "status": "verified",
+            "evidence": "Independent HTTP request returned HTTP 200.",
+            "error": None,
+        }
+
+        result = agent.execute_conditional_task(
+            "Check my internet connection and get the weather in Mumbai."
+        )
+
+        self.assertIn("incomplete", result.lower())
+        self.assertNotIn("Task completed successfully.", result)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

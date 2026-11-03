@@ -1215,6 +1215,7 @@ def execute_conditional_task(message):
             actual_arguments = recovery_arguments
             result_message = format_tool_result(result)
 
+        
         execution_history.append({
             "tool": actual_tool,
             "arguments": actual_arguments,
@@ -1224,12 +1225,24 @@ def execute_conditional_task(message):
             "attempts": attempts,
         })
 
+        # A successful recovery must perform the originally requested action.
+        # A different tool or different arguments must not count as success.
+        if succeeded and (
+            actual_tool != tool_name
+            or actual_arguments != normalized_arguments
+        ):
+            return finish(
+                "Task incomplete: Recovery performed a different action "
+                "or used different arguments than originally requested."
+            )
+
         print(f"Agent observation: {result_message}")
 
         if not succeeded:
             return finish(
                 "Task incomplete: " + result_message
             )
+
 
         # Independently verify successful internet-check actions.
         if actual_tool == "check_internet":
