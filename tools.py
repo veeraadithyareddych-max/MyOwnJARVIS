@@ -1,4 +1,4 @@
-
+﻿
 # MyOwnJARVIS - Application Tools
 # Tools return structured results so the agent can detect success or failure.
 
@@ -8,7 +8,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-
+import json
+import math
 
 # --------------------------------------------------
 # 1. STRUCTURED RESULT FORMAT
@@ -257,19 +258,83 @@ def get_weather(city):
             + weather_query
         )
 
-        weather_data = fetch_json(weather_url)
-        current = weather_data.get("current", {})
 
-        if "temperature_2m" not in current:
+        weather_data = fetch_json(weather_url)
+
+        if not isinstance(weather_data, dict):
+            return tool_result(
+                False,
+                "get_weather",
+                error="The weather service returned an invalid response.",
+            )
+
+        current = weather_data.get("current")
+
+        if not isinstance(current, dict):
             return tool_result(
                 False,
                 "get_weather",
                 error="The weather service did not return current conditions.",
             )
 
+        required_fields = (
+            "temperature_2m",
+            "relative_humidity_2m",
+            "wind_speed_10m",
+        )
+
+        missing_fields = [
+            field for field in required_fields
+            if field not in current or current[field] is None
+        ]
+
+        if missing_fields:
+            return tool_result(
+                False,
+                "get_weather",
+                error=(
+                    "The weather service returned incomplete data. "
+                    f"Missing fields: {', '.join(missing_fields)}."
+                ),
+            )
+
         temperature = current["temperature_2m"]
-        humidity = current.get("relative_humidity_2m")
-        wind_speed = current.get("wind_speed_10m")
+        humidity = current["relative_humidity_2m"]
+        wind_speed = current["wind_speed_10m"]
+
+        for field, value in (
+            ("temperature_2m", temperature),
+            ("relative_humidity_2m", humidity),
+            ("wind_speed_10m", wind_speed),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                return tool_result(
+                    False,
+                    "get_weather",
+                    error=(
+                        "The weather service returned an invalid "
+                        f"value for {field}."
+                    ),
+                )
+
+        if not 0 <= humidity <= 100:
+            return tool_result(
+                False,
+                "get_weather",
+                error="The weather service returned invalid humidity.",
+            )
+
+        if wind_speed < 0:
+            return tool_result(
+                False,
+                "get_weather",
+                error="The weather service returned invalid wind speed.",
+            )
+
 
         weather_message = (
             f"Current weather for {city_name}: "

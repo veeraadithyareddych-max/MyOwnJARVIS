@@ -349,6 +349,165 @@ class ToolExecutionTests(unittest.TestCase):
 
 
     # ========================================================
+    # WEATHER RESPONSE VALIDATION TESTS
+    # ========================================================
+
+    @patch("tools.fetch_json")
+    def test_weather_accepts_complete_valid_data(self, mock_fetch):
+        mock_fetch.side_effect = [
+            {
+                "results": [
+                    {
+                        "latitude": 13.08,
+                        "longitude": 80.27,
+                        "name": "Chennai",
+                    }
+                ]
+            },
+            {
+                "current": {
+                    "temperature_2m": 30.7,
+                    "relative_humidity_2m": 62,
+                    "wind_speed_10m": 9.4,
+                }
+            },
+        ]
+
+        result = tools.get_weather("Chennai")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["data"]["temperature_celsius"], 30.7)
+        self.assertEqual(result["data"]["humidity_percent"], 62)
+        self.assertEqual(result["data"]["wind_speed_kmh"], 9.4)
+
+    @patch("tools.fetch_json")
+    def test_weather_rejects_non_dictionary_response(self, mock_fetch):
+        mock_fetch.side_effect = [
+            {
+                "results": [
+                    {
+                        "latitude": 13.08,
+                        "longitude": 80.27,
+                        "name": "Chennai",
+                    }
+                ]
+            },
+            ["invalid", "weather", "response"],
+        ]
+
+        result = tools.get_weather("Chennai")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("invalid response", result["error"])
+
+    @patch("tools.fetch_json")
+    def test_weather_rejects_missing_required_fields(self, mock_fetch):
+        mock_fetch.side_effect = [
+            {
+                "results": [
+                    {
+                        "latitude": 13.08,
+                        "longitude": 80.27,
+                        "name": "Chennai",
+                    }
+                ]
+            },
+            {
+                "current": {
+                    "temperature_2m": 30.7,
+                    "relative_humidity_2m": 62,
+                }
+            },
+        ]
+
+        result = tools.get_weather("Chennai")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("incomplete data", result["error"])
+        self.assertIn("wind_speed_10m", result["error"])
+
+    @patch("tools.fetch_json")
+    def test_weather_rejects_non_numeric_temperature(self, mock_fetch):
+        mock_fetch.side_effect = [
+            {
+                "results": [
+                    {
+                        "latitude": 13.08,
+                        "longitude": 80.27,
+                        "name": "Chennai",
+                    }
+                ]
+            },
+            {
+                "current": {
+                    "temperature_2m": "hot",
+                    "relative_humidity_2m": 62,
+                    "wind_speed_10m": 9.4,
+                }
+            },
+        ]
+
+        result = tools.get_weather("Chennai")
+
+        self.assertFalse(result["success"])
+        self.assertIn("temperature_2m", result["error"])
+
+    @patch("tools.fetch_json")
+    def test_weather_rejects_out_of_range_humidity(self, mock_fetch):
+        mock_fetch.side_effect = [
+            {
+                "results": [
+                    {
+                        "latitude": 13.08,
+                        "longitude": 80.27,
+                        "name": "Chennai",
+                    }
+                ]
+            },
+            {
+                "current": {
+                    "temperature_2m": 30.7,
+                    "relative_humidity_2m": 150,
+                    "wind_speed_10m": 9.4,
+                }
+            },
+        ]
+
+        result = tools.get_weather("Chennai")
+
+        self.assertFalse(result["success"])
+        self.assertIn("invalid humidity", result["error"])
+
+    @patch("tools.fetch_json")
+    def test_weather_rejects_negative_wind_speed(self, mock_fetch):
+        mock_fetch.side_effect = [
+            {
+                "results": [
+                    {
+                        "latitude": 13.08,
+                        "longitude": 80.27,
+                        "name": "Chennai",
+                    }
+                ]
+            },
+            {
+                "current": {
+                    "temperature_2m": 30.7,
+                    "relative_humidity_2m": 62,
+                    "wind_speed_10m": -5,
+                }
+            },
+        ]
+
+        result = tools.get_weather("Chennai")
+
+        self.assertFalse(result["success"])
+        self.assertIn("invalid wind speed", result["error"])
+
+    # ========================================================
     # TOOL RETRY SYSTEM TESTS
     # ========================================================
 
