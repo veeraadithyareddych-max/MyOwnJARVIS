@@ -1181,6 +1181,28 @@ def execute_conditional_task(message):
             return finish(
                 "Website action blocked because it was not explicitly requested."
             )
+        
+        # Ensure the AI-selected weather city matches the user's request.
+        if (
+            tool_name == "get_weather"
+            and needs_weather
+            and " in " in request_lower
+        ):
+            requested_city = (
+    message.rsplit(" in ", 1)[1]
+    .strip()
+    .rstrip(".!?")
+)
+
+            selected_city = normalized_arguments.get("city", "").strip()
+
+            if requested_city.casefold() != selected_city.casefold():
+                return finish(
+                    "Task incomplete: You requested weather for "
+                    f"{requested_city}, but the AI selected "
+                    f"{selected_city}."
+                )
+
 
         print(f"Agent step {step_number}: {tool_name}")
 

@@ -453,6 +453,48 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertEqual(mock_next_action.call_count, 5)
 
 
+    @patch("agent.format_tool_result")
+    @patch("agent.ask_local_ai_for_next_action")
+    @patch("agent.execute_with_recovery")
+    def test_wrong_weather_city_is_not_counted_as_success(
+        self,
+        mock_execute,
+        mock_next_action,
+        mock_format,
+    ):
+        """Weather for the wrong city must not satisfy the request."""
+
+        mock_execute.side_effect = [
+            (self.success_result("check_internet"), 1, True),
+            (self.success_result("get_weather"), 1, True),
+        ]
+
+        mock_next_action.side_effect = [
+            {
+                "done": False,
+                "tool": "check_internet",
+                "arguments": {},
+            },
+            {
+                "done": False,
+                "tool": "get_weather",
+                "arguments": {"city": "Delhi"},
+            },
+            {
+                "done": True,
+                "message": "Everything is complete.",
+            },
+        ]
+
+        mock_format.return_value = "Action succeeded"
+
+        result = agent.execute_conditional_task(
+            "Check my internet connection and get the weather in Mumbai."
+        )
+
+        self.assertIn("Task incomplete", result)
+        self.assertIn("Mumbai", result)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
