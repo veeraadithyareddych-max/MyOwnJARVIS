@@ -57,8 +57,9 @@ def make_tool_result(success, tool, data=None, error=None):
     }
 
 
+
 def execute_tool(tool_name, **arguments):
-    """Execute an approved tool and return a structured result."""
+    """Execute an approved tool and return a validated structured result."""
 
     tool = TOOL_REGISTRY.get(tool_name)
 
@@ -72,7 +73,7 @@ def execute_tool(tool_name, **arguments):
     try:
         result = tool(**arguments)
 
-        
+        # Every tool must return a dictionary.
         if not isinstance(result, dict):
             return make_tool_result(
                 False,
@@ -80,7 +81,7 @@ def execute_tool(tool_name, **arguments):
                 error="The tool returned an invalid result format.",
             )
 
-        # Reject results that claim to come from another tool.
+        # The returned tool name must match the requested tool.
         if result.get("tool") != tool_name:
             return make_tool_result(
                 False,
@@ -88,7 +89,7 @@ def execute_tool(tool_name, **arguments):
                 error="The tool returned a mismatched tool name.",
             )
 
-        # The success field must be an actual Boolean.
+        # The success flag must be an actual Boolean.
         if type(result.get("success")) is not bool:
             return make_tool_result(
                 False,
@@ -96,7 +97,7 @@ def execute_tool(tool_name, **arguments):
                 error="The tool returned an invalid success flag.",
             )
 
-        # Successful results must contain meaningful result data.
+        # Successful results must contain result data.
         if result["success"] is True:
             if result.get("data") is None:
                 return make_tool_result(
@@ -105,9 +106,14 @@ def execute_tool(tool_name, **arguments):
                     error="The tool reported success without result data.",
                 )
 
-        # Failed results must explain the failure.
+        # Failed results must provide a meaningful error message.
         else:
-            if not isinstance(result.get("error"), str) or not result["error"].strip():
+            error_message = result.get("error")
+
+            if (
+                not isinstance(error_message, str)
+                or not error_message.strip()
+            ):
                 return make_tool_result(
                     False,
                     tool_name,
@@ -115,6 +121,21 @@ def execute_tool(tool_name, **arguments):
                 )
 
         return result
+
+    except TypeError as error:
+        return make_tool_result(
+            False,
+            tool_name,
+            error=f"Invalid arguments for {tool_name}: {error}",
+        )
+
+    except Exception as error:
+        return make_tool_result(
+            False,
+            tool_name,
+            error=f"Tool execution failed: {error}",
+        )
+
 
 
         return make_tool_result(
