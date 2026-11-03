@@ -183,6 +183,9 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["tool"], "open_application")
         self.assertEqual(result.get("status"), "accepted")
+        self.assertIn("accepted the request to launch", result["data"])
+        self.assertIn("not been independently verified", result["data"])
+        self.assertNotIn("opened successfully", result["data"].lower())
 
     @patch("tools.webbrowser.open", return_value=True)
     def test_website_open_reports_accepted_not_verified(self, mock_open):
