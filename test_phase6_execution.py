@@ -421,5 +421,38 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertNotIn("Task completed successfully.", result)
 
 
+    
+    @patch("agent.execute_with_recovery")
+    @patch("agent.ask_local_ai_for_next_action")
+    def test_agent_stops_after_maximum_steps(
+        self,
+        mock_next_action,
+        mock_execute,
+    ):
+        """The agent must stop when the AI never finishes the task."""
+
+        mock_next_action.return_value = {
+            "done": False,
+            "tool": "get_weather",
+            "arguments": {"city": "Mumbai"},
+            "message": "Get the weather",
+        }
+
+        mock_execute.return_value = (
+            self.success_result("get_weather"),
+            1,
+            True,
+        )
+
+        result = agent.execute_conditional_task(
+            "Check the internet and get the weather in Mumbai."
+        )
+
+        self.assertIn("maximum of 5 actions", result)
+        self.assertEqual(mock_execute.call_count, 5)
+        self.assertEqual(mock_next_action.call_count, 5)
+
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
