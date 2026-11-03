@@ -1,6 +1,5 @@
 ﻿
 import unittest
-from unittest import result
 from unittest.mock import patch
 
 import agent
@@ -277,12 +276,10 @@ class Phase6ExecutionTests(unittest.TestCase):
             "success": True,
             "tool": "check_internet",
             "status": "verified",
-            
-"evidence": {
-    "check": "Independent HTTP request",
-    "observed": "HTTP 200 returned by the test server.",
-},
-
+            "evidence": {
+                "check": "Independent HTTP request",
+                "observed": "HTTP 200 returned by the test server.",
+            },
             "error": None,
         }
 
@@ -336,6 +333,47 @@ class Phase6ExecutionTests(unittest.TestCase):
     @patch("agent.verify_internet_connection")
     @patch("agent.format_tool_result")
     @patch("agent.execute_with_recovery")
+    def test_malformed_verification_evidence_is_rejected(
+        self,
+        mock_execute,
+        mock_format,
+        mock_verify,
+    ):
+        """A success flag cannot replace valid verification evidence."""
+
+        mock_execute.return_value = (
+            self.success_result("check_internet"),
+            1,
+            True,
+        )
+
+        mock_format.return_value = "Internet check action succeeded"
+
+        mock_verify.return_value = {
+            "success": True,
+            "tool": "check_internet",
+            "status": "verified",
+            "evidence": {
+                "check": "   ",
+                "observed": "",
+            },
+            "error": "Malformed verification evidence.",
+        }
+
+        result = agent.execute_conditional_task(
+            "Check my internet connection."
+        )
+
+        self.assertIn("independent verification failed", result)
+        self.assertNotIn(
+            "Internet connectivity independently verified.",
+            result,
+        )
+        self.assertIn("Malformed verification evidence.", result)
+
+    @patch("agent.verify_internet_connection")
+    @patch("agent.format_tool_result")
+    @patch("agent.execute_with_recovery")
     def test_application_launch_is_not_internet_verified(
         self,
         mock_execute,
@@ -357,7 +395,6 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertIn("Application launch request accepted", result)
         self.assertNotIn("independently verified", result)
         mock_verify.assert_not_called()
-
 
     @patch("agent.verify_internet_connection")
     @patch("agent.format_tool_result")
@@ -415,7 +452,10 @@ class Phase6ExecutionTests(unittest.TestCase):
             "success": True,
             "tool": "check_internet",
             "status": "verified",
-            "evidence": "Independent HTTP request returned HTTP 200.",
+            "evidence": {
+                "check": "Independent HTTP request",
+                "observed": "HTTP 200 returned by the test server.",
+            },
             "error": None,
         }
 
@@ -425,8 +465,6 @@ class Phase6ExecutionTests(unittest.TestCase):
 
         self.assertIn("incomplete", result.lower())
         self.assertNotIn("Task completed successfully.", result)
-
-
 
     @patch("agent.execute_with_recovery")
     @patch("agent.ask_local_ai_for_next_action")
@@ -457,7 +495,6 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertIn("maximum of 5 actions", result)
         self.assertEqual(mock_execute.call_count, 5)
         self.assertEqual(mock_next_action.call_count, 5)
-
 
     @patch("agent.format_tool_result")
     @patch("agent.ask_local_ai_for_next_action")
@@ -539,12 +576,10 @@ class Phase6ExecutionTests(unittest.TestCase):
             "success": True,
             "tool": "check_internet",
             "status": "verified",
-            
-"evidence": {
-    "check": "Independent HTTP request",
-    "observed": "HTTP 200 returned by the test server.",
-},
-
+            "evidence": {
+                "check": "Independent HTTP request",
+                "observed": "HTTP 200 returned by the test server.",
+            },
             "error": None,
         }
 
@@ -558,6 +593,7 @@ class Phase6ExecutionTests(unittest.TestCase):
 
         # Only the internet check should execute.
         self.assertEqual(mock_execute.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
