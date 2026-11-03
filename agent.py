@@ -48,18 +48,19 @@ def list_available_tools():
 
 
 def make_tool_result(success, tool, data=None, error=None):
-    """Create a consistent structured result."""
+    """Create a consistent structured result with execution status."""
+
     return {
         "success": success,
         "tool": tool,
         "data": data,
         "error": error,
+        "status": "accepted" if success is True else "failed",
     }
 
 
-
 def execute_tool(tool_name, **arguments):
-    """Execute an approved tool and return a validated structured result."""
+    """Execute an approved tool and validate its structured result."""
 
     tool = TOOL_REGISTRY.get(tool_name)
 
@@ -120,32 +121,20 @@ def execute_tool(tool_name, **arguments):
                     error="The tool failed without providing an error message.",
                 )
 
+        # Validate execution status only after validating the
+        # result structure, success flag, and data/error fields.
+        expected_status = (
+            "accepted" if result["success"] is True else "failed"
+        )
+
+        if result.get("status") != expected_status:
+            return make_tool_result(
+                False,
+                tool_name,
+                error="The tool returned an invalid execution status.",
+            )
+
         return result
-
-    except TypeError as error:
-        return make_tool_result(
-            False,
-            tool_name,
-            error=f"Invalid arguments for {tool_name}: {error}",
-        )
-
-    except Exception as error:
-        return make_tool_result(
-            False,
-            tool_name,
-            error=f"Tool execution failed: {error}",
-        )
-
-
-
-        return make_tool_result(
-            False,
-            tool_name,
-            error=(
-                "The tool returned an invalid result format. "
-                "Expected a structured result dictionary."
-            ),
-        )
 
     except TypeError as error:
         return make_tool_result(
@@ -256,6 +245,7 @@ def format_tool_result(result):
 
 def result_to_json(result):
     """Convert a structured result into readable JSON for logs."""
+
     try:
         return json.dumps(result, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
@@ -328,6 +318,7 @@ def execute_plan(plan):
         print(f"Step {step_number}: {description}...")
 
         result = execute_tool(tool_name, **normalized_arguments)
+
         results.append(
             f"{description}: {format_tool_result(result)}"
         )
@@ -608,7 +599,6 @@ def execute_with_ai_recovery(
         make_action_key(current_tool, current_arguments)
     )
 
-   
     def stop_recovery(message, outcome):
         """Record why recovery stopped without executing another action."""
 
@@ -644,7 +634,6 @@ def execute_with_ai_recovery(
             current_arguments,
         )
 
-
     for attempt in range(1, max_recovery_attempts + 1):
         print(f"AI recovery analysis {attempt}...")
 
@@ -666,15 +655,15 @@ def execute_with_ai_recovery(
 
         except Exception as error:
             return stop_recovery(
-    f"Could not obtain an AI recovery decision: {error}",
-    "DECLINED",
-)
+                f"Could not obtain an AI recovery decision: {error}",
+                "DECLINED",
+            )
 
         if not isinstance(decision, dict):
             return stop_recovery(
-    "Recovery stopped: invalid AI response.",
-    "DECLINED",
-)
+                "Recovery stopped: invalid AI response.",
+                "DECLINED",
+            )
 
         if decision.get("recover") is not True:
             reason = decision.get(
@@ -682,9 +671,9 @@ def execute_with_ai_recovery(
                 "Recovery was not recommended.",
             )
             return stop_recovery(
-    f"Recovery declined. Reason: {reason}",
-    "DECLINED",
-)
+                f"Recovery declined. Reason: {reason}",
+                "DECLINED",
+            )
 
         next_tool = decision.get("tool")
         next_arguments = decision.get("arguments", {})
@@ -696,26 +685,26 @@ def execute_with_ai_recovery(
 
         if validation_error:
             return stop_recovery(
-    f"Recovery blocked: {validation_error}",
-    "BLOCKED",
-)
+                f"Recovery blocked: {validation_error}",
+                "BLOCKED",
+            )
 
         if (
             next_tool == "open_website"
             and not website_was_requested(user_request, normalized_arguments)
         ):
             return stop_recovery(
-    "Recovery blocked: website was not explicitly requested.",
-    "BLOCKED",
-)
+                "Recovery blocked: website was not explicitly requested.",
+                "BLOCKED",
+            )
 
         action_key = make_action_key(next_tool, normalized_arguments)
 
         if action_key in attempted_actions:
             return stop_recovery(
-    "Recovery stopped: duplicate action detected.",
-    "BLOCKED",
-)
+                "Recovery stopped: duplicate action detected.",
+                "BLOCKED",
+            )
 
         attempted_actions.add(action_key)
 
@@ -893,8 +882,7 @@ def execute_conditional_task(message):
 
         return f"{message_text}\n\nExecution history:\n{history_text}"
 
-    # If the request is for a supported direct tool, use that tool
-    # explicitly instead of relying on the AI to choose it.
+    # For a supported direct tool request, use that tool explicitly.
     direct_action = None
 
     if needs_internet:
@@ -956,12 +944,9 @@ def execute_conditional_task(message):
                 tool_name=tool_name,
                 arguments=arguments,
                 initial_error=result,
-                execution_history=[
-                    history_for_ai()
-                ],
+                execution_history=[history_for_ai()],
             )
 
-            
             if recovery_succeeded:
                 # Recovery must fulfill the original requested action.
                 if (
@@ -996,7 +981,6 @@ def execute_conditional_task(message):
                     + format_tool_result(recovery_result)
                 )
 
-
         missing_tools = required_tools - get_successful_tools()
 
         if missing_tools:
@@ -1011,7 +995,7 @@ def execute_conditional_task(message):
             else "Recovery completed successfully."
         )
 
-    # Use the AI for requests that need a more general task plan.
+    # Use the AI for requests requiring a multi-step plan.
     for step_number in range(1, max_steps + 1):
         try:
             decision = ask_local_ai_for_next_action(

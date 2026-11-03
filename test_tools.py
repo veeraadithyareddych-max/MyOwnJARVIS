@@ -116,5 +116,30 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertEqual(result["tool"], "open_website")
 
 
+    def test_application_launch_reports_accepted_not_verified(self):
+        with patch("tools.subprocess.Popen") as mock_popen:
+            result = tools.open_application("Notepad")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool"], "open_application")
+        self.assertEqual(result.get("status"), "accepted")
+
+    @patch("tools.webbrowser.open", return_value=True)
+    def test_website_open_reports_accepted_not_verified(self, mock_open):
+        result = tools.open_website("Google")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool"], "open_website")
+        self.assertEqual(result.get("status"), "accepted")
+
+    @patch("tools.subprocess.Popen", side_effect=OSError("Launch failed"))
+    def test_failed_application_launch_reports_failed_status(self, mock_popen):
+        result = tools.open_application("Notepad")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["tool"], "open_application")
+        self.assertEqual(result.get("status"), "failed")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

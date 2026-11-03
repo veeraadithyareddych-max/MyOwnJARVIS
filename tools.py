@@ -14,14 +14,23 @@ import webbrowser
 # 1. STRUCTURED RESULT FORMAT
 # --------------------------------------------------
 
+
 def tool_result(success, tool, data=None, error=None):
-    """Create a consistent result for every tool."""
+    """Create a structured tool result with an execution status."""
+
+    if success:
+        status = "accepted"
+    else:
+        status = "failed"
+
     return {
         "success": success,
         "tool": tool,
         "data": data,
         "error": error,
+        "status": status,
     }
+
 
 
 # --------------------------------------------------
