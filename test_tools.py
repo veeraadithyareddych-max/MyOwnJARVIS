@@ -316,5 +316,135 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertIn("Connection unavailable", result["error"])
 
 
+    # ========================================================
+    # TOOL RETRY SYSTEM TESTS
+    # ========================================================
+
+    @patch("agent.tool_result_succeeded")
+    @patch("agent.execute_tool")
+    def test_retryable_tool_succeeds_on_third_attempt(
+        self,
+        mock_execute,
+        mock_succeeded,
+    ):
+        """A retryable tool can succeed on its third attempt."""
+
+        mock_execute.side_effect = [
+            {"success": False, "tool": "get_weather",
+             "error": "Temporary failure", "status": "failed"},
+            {"success": False, "tool": "get_weather",
+             "error": "Temporary failure", "status": "failed"},
+            {"success": True, "tool": "get_weather",
+             "data": "Weather retrieved", "status": "verified"},
+        ]
+        mock_succeeded.side_effect = [False, False, True]
+
+        result, attempts, succeeded = agent.execute_with_recovery(
+            "get_weather",
+            {"city": "Chennai"},
+        )
+
+        self.assertTrue(succeeded)
+        self.assertEqual(attempts, 3)
+        self.assertTrue(result["success"])
+        self.assertEqual(mock_execute.call_count, 3)
+
+    @patch("agent.tool_result_succeeded", return_value=False)
+    @patch("agent.execute_tool")
+    def test_retryable_tool_stops_after_three_failed_attempts(
+        self,
+        mock_execute,
+        mock_succeeded,
+    ):
+        """A retryable tool stops after the default three attempts."""
+
+        mock_execute.return_value = {
+            "success": False,
+            "tool": "get_weather",
+            "error": "Service unavailable",
+            "status": "failed",
+        }
+
+        result, attempts, succeeded = agent.execute_with_recovery(
+            "get_weather",
+            {"city": "Chennai"},
+        )
+
+        self.assertFalse(succeeded)
+        self.assertEqual(attempts, 3)
+        self.assertFalse(result["success"])
+        self.assertEqual(mock_execute.call_count, 3)
+
+    @patch("agent.tool_result_succeeded", return_value=False)
+    @patch("agent.execute_tool")
+    def test_non_retryable_tool_stops_after_one_attempt(
+        self,
+        mock_execute,
+        mock_succeeded,
+    ):
+        """An application launch failure is not automatically retried."""
+
+        mock_execute.return_value = {
+            "success": False,
+            "tool": "open_application",
+            "error": "Launch failed",
+            "status": "failed",
+        }
+
+        result, attempts, succeeded = agent.execute_with_recovery(
+            "open_application",
+            {"app_name": "Notepad"},
+        )
+
+        self.assertFalse(succeeded)
+        self.assertEqual(attempts, 1)
+        self.assertFalse(result["success"])
+        mock_execute.assert_called_once()
+
+    @patch("agent.execute_tool")
+    def test_invalid_arguments_are_rejected_without_execution(
+        self,
+        mock_execute,
+    ):
+        """Invalid arguments must not reach the tool executor."""
+
+        result, attempts, succeeded = agent.execute_with_recovery(
+            "open_application",
+            {"app_name": "UnknownApp"},
+        )
+
+        self.assertFalse(succeeded)
+        self.assertEqual(attempts, 0)
+        self.assertFalse(result["success"])
+        mock_execute.assert_not_called()
+
+    @patch("agent.tool_result_succeeded", return_value=False)
+    @patch("agent.execute_tool")
+    def test_zero_retries_means_one_total_attempt(
+        self,
+        mock_execute,
+        mock_succeeded,
+    ):
+        """max_retries=0 allows only the initial attempt."""
+
+        mock_execute.return_value = {
+            "success": False,
+            "tool": "get_weather",
+            "error": "Service unavailable",
+            "status": "failed",
+        }
+
+        result, attempts, succeeded = agent.execute_with_recovery(
+            "get_weather",
+            {"city": "Chennai"},
+            max_retries=0,
+        )
+
+        self.assertFalse(succeeded)
+        self.assertEqual(attempts, 1)
+        self.assertFalse(result["success"])
+        mock_execute.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
