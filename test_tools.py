@@ -257,6 +257,38 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIsNone(result["evidence"])
 
+    def test_verification_validator_rejects_blank_evidence(self):
+        verification = {
+            "success": True,
+            "tool": "open_application",
+            "status": "verified",
+            "evidence": {
+                "check": "   ",
+                "observed": "   ",
+            },
+            "error": None,
+        }
+
+        self.assertFalse(
+            agent.verification_evidence_is_valid(verification)
+        )
+
+    def test_verification_validator_rejects_invalid_evidence_types(self):
+        verification = {
+            "success": True,
+            "tool": "open_application",
+            "status": "verified",
+            "evidence": {
+                "check": ["not", "a", "string"],
+                "observed": {"result": "unknown"},
+            },
+            "error": None,
+        }
+
+        self.assertFalse(
+            agent.verification_evidence_is_valid(verification)
+        )
+
     # ========================================================
     # INDEPENDENT INTERNET VERIFICATION TESTS
     # ========================================================
