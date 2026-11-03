@@ -1463,6 +1463,24 @@ def respond_to_user(message):
 
     if not normalized_message:
         return "Please enter a message."
+    
+    # -------------------------------------------------
+    # SHORT-TERM CONVERSATION RECALL
+    # -------------------------------------------------
+
+    recall_questions = {
+        "what did i just ask you",
+        "what was my last question",
+        "what did i ask you",
+        "what was my previous question",
+    }
+
+    if normalized_message in recall_questions:
+        if SESSION_CONVERSATION_HISTORY:
+            previous_question = SESSION_CONVERSATION_HISTORY[-1][0]
+            return f"Your previous message was: {previous_question}"
+
+        return "We haven't had a previous conversation in this session yet."
 
     if normalized_message in ["hello", "hi", "hey"]:
         return "Hello! How can I help you?"
