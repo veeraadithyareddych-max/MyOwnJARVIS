@@ -1016,6 +1016,15 @@ def is_specific_java_example_request(user_message, facts=""):
         "latest java inheritance example",
         "most recent inheritance example",
         "latest inheritance example",
+        "that example",
+        "that code",
+        "this same example",
+        "same example",
+        "explain that example again",
+        "explain that code again",
+        "repeat that example",
+        "repeat that code",
+        "what about that example",
     )
 
     if any(phrase in text for phrase in specific_phrases):
@@ -1370,6 +1379,13 @@ CONVERSATION CONTEXT:
 - Do not answer an earlier question again unless the user asks you to.
 - If the user changes topics, follow the new topic.
 - Do not invent previous statements or claim to remember unavailable details.
+- Resolve phrases such as "that example", "that code", and "explain it
+  again" using the most relevant earlier exchange.
+- When the user asks to repeat or explain an earlier example, use that
+  example's actual code from the conversation when available.
+- Do not create a different example unless the user asks for a new one.
+- If the referenced example cannot be identified, ask a brief
+  clarification instead of inventing the earlier code.
 
 RECENT CONVERSATION:
 {conversation_context}
