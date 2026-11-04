@@ -6,6 +6,7 @@
 # ============================================================
 
 import json
+import time
 import urllib.request
 
 from tools import (
@@ -105,6 +106,7 @@ def make_verification_result(verified, tool, evidence=None, error=None):
     }
 
 
+
 def verify_application_running(app_name):
     """Independently verify that an approved application's process is running."""
 
@@ -133,62 +135,65 @@ def verify_application_running(app_name):
             error="Cannot verify an application that is not approved.",
         )
 
-    try:
-        result = subprocess.run(
-            ["tasklist", "/FO", "CSV", "/NH"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
+    # Allow packaged Windows applications, especially Calculator,
+    # a short time to finish starting before checking the process list.
+    deadline = time.monotonic() + 5
+    last_error = None
 
-        if result.returncode != 0:
-            return make_verification_result(
-                False,
-                "open_application",
-                error="Windows process listing failed.",
+    while True:
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
 
-        running_processes = {
-            line.split(",", 1)[0].strip('"').casefold()
-            for line in result.stdout.splitlines()
-            if line.strip()
-        }
+            if result.returncode != 0:
+                last_error = "Windows process listing failed."
+            else:
+                running_processes = {
+                    line.split(",", 1)[0].strip('"').casefold()
+                    for line in result.stdout.splitlines()
+                    if line.strip()
+                }
 
-        matched_processes = [
-            name
-            for name in expected_processes
-            if name.casefold() in running_processes
-        ]
+                matched_processes = [
+                    name
+                    for name in expected_processes
+                    if name.casefold() in running_processes
+                ]
 
-        if not matched_processes:
-            return make_verification_result(
-                False,
-                "open_application",
-                error=(
+                if matched_processes:
+                    return make_verification_result(
+                        True,
+                        "open_application",
+                        evidence={
+                            "check": "Windows tasklist process listing",
+                            "observed": (
+                                "Detected running process: "
+                                + ", ".join(matched_processes)
+                            ),
+                        },
+                    )
+
+                last_error = (
                     f"No expected process was detected for "
                     f"{app_name.title()}."
-                ),
+                )
+
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            last_error = f"Windows process verification failed: {exc}"
+
+        if time.monotonic() >= deadline:
+            return make_verification_result(
+                False,
+                "open_application",
+                error=last_error,
             )
 
-        return make_verification_result(
-            True,
-            "open_application",
-            evidence={
-                "check": "Windows tasklist process listing",
-                "observed": (
-                    "Detected running process: "
-                    + ", ".join(matched_processes)
-                ),
-            },
-        )
-
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return make_verification_result(
-            False,
-            "open_application",
-            error=f"Application process verification failed: {error}",
-        )
+        time.sleep(0.5)
 
 
 def verify_internet_connection(timeout=5):

@@ -1768,10 +1768,26 @@ def handle_intent(message):
                 rf"\b{re.escape(site_name)}\b",
                 message_lower,
             ):
+                if normalized_site not in {
+                    "google",
+                    "youtube",
+                    "github",
+                }:
+                    return (
+                        "I can currently open Google, YouTube, "
+                        "and GitHub only."
+                    )
+
                 return execute_tool(
                     "open_website",
                     site_name=normalized_site,
                 )
+
+        return (
+            "I can currently open Google, YouTube, and GitHub only. "
+            "No website was opened."
+        )
+
 
     # -----------------------------------------------------
     # PREDICT INTENT
@@ -1934,13 +1950,60 @@ def main():
             for keyword in tool_keywords
         )
 
-        if requires_tool:
+        application_names = {
+            "notepad",
+            "calculator",
+            "paint",
+        }
+
+        requested_application = any(
+            re.search(
+                rf"\b{re.escape(app_name)}\b",
+                message_lower,
+            )
+            for app_name in application_names
+        )
+
+        website_request = (
+            (
+                message_lower.startswith("open ")
+                or message_lower.startswith("visit ")
+                or message_lower.startswith("go to ")
+            )
+            and not requested_application
+        )
+        if website_request:
+            supported_websites = {"google", "youtube", "github"}
+
+            requested_site = None
+
+            for site_name in supported_websites:
+                if re.search(
+                    rf"\b{re.escape(site_name)}\b",
+                    message_lower,
+                ):
+                    requested_site = site_name
+                    break
+
+            if requested_site:
+                response = execute_conditional_task(user_message)
+
+                if response is None:
+                    response = respond_to_user(user_message)
+            else:
+                response = (
+                    "I can currently open Google, YouTube, and GitHub only. "
+                    "No website was opened."
+                )
+
+        elif requires_tool:
             response = execute_conditional_task(user_message)
 
             if response is None:
                 response = respond_to_user(user_message)
         else:
             response = respond_to_user(user_message)
+
 
         # -------------------------------------------------
         # PERSIST JAVA CODE EXAMPLES
