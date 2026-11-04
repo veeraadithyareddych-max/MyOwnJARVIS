@@ -1,4 +1,4 @@
-
+﻿
 # ============================================================
 # MyOwnJARVIS - Agent Tool Registry and Task Planner
 # Structured Tool Results + AI Recovery + Memory
@@ -590,6 +590,34 @@ def website_was_requested(user_request, arguments):
     )
 
 
+def is_application_launch_request(message):
+    """Return True when the message explicitly asks to launch an application."""
+
+    if not isinstance(message, str):
+        return False
+
+    request = " ".join(message.lower().strip().split())
+
+    prefixes = (
+        "",
+        "please ",
+        "can you ",
+        "could you ",
+        "would you ",
+        "please can you ",
+        "please could you ",
+        "i want you to ",
+        "i need you to ",
+    )
+
+    actions = ("open ", "launch ", "start ", "run ")
+
+    return any(
+        request.startswith(prefix + action)
+        for prefix in prefixes
+        for action in actions
+    )
+
 
 def execute_ai_agent_task(message):
     """Ask the local AI to plan tasks, validate them, and execute them."""
@@ -604,15 +632,20 @@ def execute_ai_agent_task(message):
     if not isinstance(tasks, list):
         return "The AI planner returned an invalid task list."
 
-    if not tasks:
-        request_lower = message.lower()
 
-        application_request_phrases = (
-            "open ",
-            "launch ",
-            "start ",
-            "run ",
+    if not tasks:
+        if is_application_launch_request(message):
+            return (
+                "I couldn't identify a valid application action for "
+                "your request. Please check the application name "
+                "and try again."
+            )
+
+        return (
+            "I couldn't determine the required action for this request. "
+            "Please rephrase it."
         )
+
 
         if any(
             phrase in request_lower
@@ -688,15 +721,20 @@ def execute_result_aware_task(message):
     if not isinstance(tasks, list):
         return "The AI planner returned an invalid task list."
 
-    if not tasks:
-        request_lower = message.lower()
 
-        application_request_phrases = (
-            "open ",
-            "launch ",
-            "start ",
-            "run ",
+    if not tasks:
+        if is_application_launch_request(message):
+            return (
+                "I couldn't identify a valid application action for "
+                "your request. Please check the application name "
+                "and try again."
+            )
+
+        return (
+            "I couldn't determine the required action for this request. "
+            "Please rephrase it."
         )
+
 
         if any(
             phrase in request_lower

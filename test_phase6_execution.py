@@ -1,4 +1,4 @@
-
+﻿
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +21,66 @@ class Phase6ExecutionTests(unittest.TestCase):
             "tool": tool_name,
             "error": f"{tool_name} failed",
         }
+
+    @patch("agent.ask_local_ai_for_plan", return_value={"tasks": []})
+    def test_empty_plan_recognizes_explicit_application_request(
+        self, mock_plan
+    ):
+        """An explicit launch request should receive the application error."""
+
+        for executor in (
+            agent.execute_ai_agent_task,
+            agent.execute_result_aware_task,
+        ):
+            with self.subTest(executor=executor.__name__):
+                result = executor("Open Notepad.")
+
+                self.assertIn(
+                    "I couldn't identify a valid application action",
+                    result,
+                )
+
+    @patch("agent.ask_local_ai_for_plan", return_value={"tasks": []})
+    def test_empty_plan_does_not_misclassify_negative_request(
+        self, mock_plan
+    ):
+        """A negative sentence must not be classified as a launch request."""
+
+        for executor in (
+            agent.execute_ai_agent_task,
+            agent.execute_result_aware_task,
+        ):
+            with self.subTest(executor=executor.__name__):
+                result = executor("I don't want to open Notepad.")
+
+                self.assertIn(
+                    "Please rephrase it.",
+                    result,
+                )
+                self.assertNotIn(
+                    "valid application action",
+                    result,
+                )
+
+    @patch("agent.ask_local_ai_for_plan", return_value={"tasks": []})
+    def test_empty_plan_for_unrelated_request_uses_generic_response(
+        self, mock_plan
+    ):
+        """An unrelated request should receive the generic response."""
+
+        for executor in (
+            agent.execute_ai_agent_task,
+            agent.execute_result_aware_task,
+        ):
+            with self.subTest(executor=executor.__name__):
+                result = executor("Tell me something interesting.")
+
+                self.assertIn("Please rephrase it.", result)
+                self.assertNotIn(
+                    "valid application action",
+                    result,
+                )
+
 
     @patch("agent.format_tool_result")
     @patch("agent.ask_local_ai_for_next_action")
