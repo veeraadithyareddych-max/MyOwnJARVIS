@@ -1121,6 +1121,36 @@ def execute_conditional_task(message):
     max_steps = 5
     request_lower = message.lower()
 
+    # Do not execute application actions for informational questions.
+    informational_question = (
+        request_lower.strip().startswith((
+            "how do i ",
+            "how can i ",
+            "how to ",
+            "what is the way to ",
+            "can you explain how to ",
+            "tell me how to ",
+            "can you tell me how to ",
+            "could you tell me how to ",
+        ))
+        and any(
+            re.search(
+                r"\b(?:open|launch|start|run)\s+"
+                + re.escape(app_name)
+                + r"\b",
+                request_lower,
+            )
+            for app_name in ALLOWED_APPLICATIONS
+        )
+    )
+
+    if informational_question:
+        return (
+            "I can explain how to open an application, "
+            "but I won't launch it unless you explicitly ask me to."
+        )
+
+
     # Give a clear response for unsupported standalone application requests.
     if is_application_launch_request(message):
         normalized_request = " ".join(
@@ -1187,19 +1217,32 @@ def execute_conditional_task(message):
 
     # Reject negative application requests, but allow application
     # requests inside compound tasks such as checking internet first.
-    negative_application_request = any(
-        phrase in request_lower
-        for phrase in (
-            "don't want to open ",
-            "do not want to open ",
-            "don't want to launch ",
-            "do not want to launch ",
-            "don't open ",
-            "do not open ",
-            "don't launch ",
-            "do not launch ",
+
+
+
+    negative_application_request = bool(
+        re.search(
+            r"\b(?:don't|do not|dont)\b"
+            r".{0,40}\b(?:open|launch|start|run)\s+"
+            r"(?:notepad|calculator|paint)\b",
+            request_lower,
+        )
+    ) or bool(
+        re.search(
+            r"\b(?:don't want to|do not want to|"
+            r"don't want you to|do not want you to)\b"
+            r".{0,20}\b(?:open|launch|start|run)\s+"
+            r"(?:notepad|calculator|paint)\b",
+            request_lower,
         )
     )
+
+    # Stop immediately when the user explicitly rejects an app launch.
+    if negative_application_request:
+        return "Okay, I won't open or launch that application."
+
+
+
 
     needs_application = (
         not negative_application_request

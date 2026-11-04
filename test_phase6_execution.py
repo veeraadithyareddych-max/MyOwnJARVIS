@@ -1,4 +1,5 @@
-﻿import unittest
+﻿
+import unittest
 from unittest.mock import patch
 
 import agent
@@ -20,6 +21,7 @@ class Phase6ExecutionTests(unittest.TestCase):
             "tool": tool_name,
             "error": f"{tool_name} failed",
         }
+
     def test_website_was_requested_accepts_supported_phrases(self):
         """Supported websites must require an explicit request."""
 
@@ -97,13 +99,12 @@ class Phase6ExecutionTests(unittest.TestCase):
 
         agent.execute_conditional_task("Open example.com.")
 
-        for call in mock_execute.call_args_list:
+        for tool_call in mock_execute.call_args_list:
             self.assertNotEqual(
-                call.args[0],
+                tool_call.args[0],
                 "open_website",
                 "An unsupported website request must not open a website.",
             )
-
 
     @patch("agent.execute_with_recovery")
     @patch("agent.ask_local_ai_for_next_action")
@@ -134,14 +135,59 @@ class Phase6ExecutionTests(unittest.TestCase):
             "I don't want to open Notepad."
         )
 
-        for call in mock_execute.call_args_list:
+        for tool_call in mock_execute.call_args_list:
             self.assertNotEqual(
-                call.args[0],
+                tool_call.args[0],
                 "open_application",
                 "A negative request must not launch an application.",
             )
 
         mock_verify.assert_not_called()
+
+    @patch("agent.execute_with_recovery")
+    def test_application_information_question_does_not_launch_app(
+        self,
+        mock_execute,
+    ):
+        """Questions about opening apps must not launch them."""
+
+        requests = [
+            "How do I open Notepad?",
+            "Can you tell me how to open Notepad?",
+            "Could you tell me how to launch Calculator?",
+        ]
+
+        for request in requests:
+            with self.subTest(request=request):
+                mock_execute.reset_mock()
+
+                result = agent.execute_conditional_task(request)
+
+                mock_execute.assert_not_called()
+                self.assertIsInstance(result, str)
+
+    @patch("agent.execute_with_recovery")
+    def test_negative_application_requests_do_not_launch_app(
+        self,
+        mock_execute,
+    ):
+        """Negative launch instructions must not launch applications."""
+
+        requests = [
+            "Don't open Notepad",
+            "Please don't open Notepad",
+            "Do not start Calculator",
+            "I don't want you to launch Paint",
+        ]
+
+        for request in requests:
+            with self.subTest(request=request):
+                mock_execute.reset_mock()
+
+                result = agent.execute_conditional_task(request)
+
+                mock_execute.assert_not_called()
+                self.assertIsInstance(result, str)
 
     @patch("agent.ask_local_ai_for_plan", return_value={"tasks": []})
     def test_empty_plan_recognizes_explicit_application_request(
@@ -262,7 +308,8 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertEqual(mock_execute.call_count, 2)
 
         executed_tools = [
-            call.args[0] for call in mock_execute.call_args_list
+            tool_call.args[0]
+            for tool_call in mock_execute.call_args_list
         ]
 
         self.assertEqual(
@@ -316,7 +363,8 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertEqual(mock_execute.call_count, 1)
 
         executed_tools = [
-            call.args[0] for call in mock_execute.call_args_list
+            tool_call.args[0]
+            for tool_call in mock_execute.call_args_list
         ]
 
         self.assertNotIn("get_weather", executed_tools)

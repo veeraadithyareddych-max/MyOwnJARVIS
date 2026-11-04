@@ -70,6 +70,31 @@ class MainRoutingIntegrationTests(unittest.TestCase):
         mock_executor.assert_called_once_with("Open Google")
         mock_response.assert_not_called()
 
+    def test_application_launch_phrases_use_conditional_executor(self):
+        """Open, launch, start, and run requests should use the agent."""
+
+        launch_requests = [
+            "Open Notepad",
+            "Launch Calculator",
+            "Start Paint",
+            "Run Notepad",
+        ]
+
+        for request in launch_requests:
+            with self.subTest(request=request):
+                with patch(
+                    "main.respond_to_user",
+                    return_value="Normal response",
+                ) as mock_response, patch(
+                    "main.execute_conditional_task",
+                    return_value="Application action handled",
+                ) as mock_executor:
+
+                    self.run_main_with_input([request, "exit"])
+
+                mock_executor.assert_called_once_with(request)
+                mock_response.assert_not_called()
+
     def test_weather_request_uses_conditional_executor(self):
         """Weather requests should use the tool-routing path."""
 

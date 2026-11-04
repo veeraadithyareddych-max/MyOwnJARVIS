@@ -1934,13 +1934,15 @@ def main():
         # -------------------------------------------------
         # ROUTE SUPPORTED TOOL REQUESTS THROUGH THE AGENT
         # -------------------------------------------------
-
         tool_keywords = [
             "internet",
             "connection",
             "weather",
             "temperature",
             "open ",
+            "launch ",
+            "start ",
+            "run ",
             "visit ",
             "go to ",
         ]
