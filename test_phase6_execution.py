@@ -88,6 +88,23 @@ class Phase6ExecutionTests(unittest.TestCase):
             )
         )
 
+    @patch("agent.execute_with_recovery")
+    def test_unsupported_website_does_not_open_another_website(
+        self,
+        mock_execute,
+    ):
+        """An unsupported domain must not trigger a substitute website."""
+
+        agent.execute_conditional_task("Open example.com.")
+
+        for call in mock_execute.call_args_list:
+            self.assertNotEqual(
+                call.args[0],
+                "open_website",
+                "An unsupported website request must not open a website.",
+            )
+
+
     @patch("agent.ask_local_ai_for_plan", return_value={"tasks": []})
     def test_empty_plan_recognizes_explicit_application_request(
         self, mock_plan
