@@ -72,7 +72,11 @@ def open_application(app_name):
         return tool_result(
             True,
             "open_application",
-            data=f"{app_name.title()} has been opened successfully.",
+            data=(
+                f"Windows accepted the request to launch "
+                f"{app_name.title()}. The application has not "
+                "been independently verified."
+            ),
         )
 
     except OSError as error:
