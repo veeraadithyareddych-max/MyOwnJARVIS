@@ -105,6 +105,44 @@ class Phase6ExecutionTests(unittest.TestCase):
             )
 
 
+    @patch("agent.execute_with_recovery")
+    @patch("agent.ask_local_ai_for_next_action")
+    def test_unsupported_application_is_not_launched(
+        self, mock_next_action, mock_execute
+    ):
+        """Unsupported applications must not be launched."""
+
+        result = agent.execute_conditional_task("Open Photoshop.")
+
+        self.assertIn("unsupported", result.lower())
+        mock_execute.assert_not_called()
+
+    @patch("agent.verify_application_running")
+    @patch("agent.execute_with_recovery")
+    @patch("agent.ask_local_ai_for_next_action")
+    def test_negative_application_request_does_not_launch(
+        self, mock_next_action, mock_execute, mock_verify
+    ):
+        """A negative request must not launch the named application."""
+
+        mock_next_action.return_value = {
+            "done": True,
+            "message": "No action requested.",
+        }
+
+        result = agent.execute_conditional_task(
+            "I don't want to open Notepad."
+        )
+
+        for call in mock_execute.call_args_list:
+            self.assertNotEqual(
+                call.args[0],
+                "open_application",
+                "A negative request must not launch an application.",
+            )
+
+        mock_verify.assert_not_called()
+
     @patch("agent.ask_local_ai_for_plan", return_value={"tasks": []})
     def test_empty_plan_recognizes_explicit_application_request(
         self, mock_plan

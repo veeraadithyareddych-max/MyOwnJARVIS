@@ -27,7 +27,7 @@ from memory import (
     save_experience,
     get_relevant_experiences,
 )
-
+import re
 
 # ============================================================
 # 1. TOOL REGISTRY
@@ -1121,6 +1121,56 @@ def execute_conditional_task(message):
     max_steps = 5
     request_lower = message.lower()
 
+    # Give a clear response for unsupported standalone application requests.
+    if is_application_launch_request(message):
+        normalized_request = " ".join(
+            request_lower.strip().rstrip(".!?").split()
+        )
+
+        prefixes = (
+            "please can you ",
+            "please could you ",
+            "can you ",
+            "could you ",
+            "would you ",
+            "please ",
+            "i want you to ",
+            "i need you to ",
+        )
+
+        launch_target = normalized_request
+
+        for prefix in prefixes:
+            if launch_target.startswith(prefix):
+                launch_target = launch_target[len(prefix):]
+                break
+
+        for action in ("open ", "launch ", "start ", "run "):
+            if launch_target.startswith(action):
+                launch_target = launch_target[len(action):]
+                break
+
+        if (
+            launch_target
+            and launch_target not in ALLOWED_APPLICATIONS
+            and launch_target not in ALLOWED_WEBSITES
+            and "." not in launch_target
+            and not any(
+                phrase in request_lower
+                for phrase in (
+                    "internet",
+                    "connection",
+                    "weather",
+                    "temperature",
+                )
+            )
+        ):
+            return (
+                f"{launch_target.title()} is unsupported. "
+                "I can open Notepad, Calculator, or Paint."
+            )
+
+
     needs_internet = (
         "internet" in request_lower
         or "connection" in request_lower
@@ -1131,21 +1181,53 @@ def execute_conditional_task(message):
         or "temperature" in request_lower
     )
 
-    needs_application = any(
+
+    # Detect application launches only when the request starts
+    # with an explicit launch instruction.
+
+    # Reject negative application requests, but allow application
+    # requests inside compound tasks such as checking internet first.
+    negative_application_request = any(
         phrase in request_lower
-        for phrase in [
-            "open notepad",
-            "open calculator",
-            "open paint",
-        ]
+        for phrase in (
+            "don't want to open ",
+            "do not want to open ",
+            "don't want to launch ",
+            "do not want to launch ",
+            "don't open ",
+            "do not open ",
+            "don't launch ",
+            "do not launch ",
+        )
+    )
+
+    needs_application = (
+        not negative_application_request
+        and any(
+            re.search(
+                r"\b(?:open|launch|start|run)\s+"
+                + re.escape(app_name)
+                + r"\b",
+                request_lower,
+            )
+            for app_name in ALLOWED_APPLICATIONS
+        )
     )
 
     requested_application = None
 
-    for app_name in ALLOWED_APPLICATIONS:
-        if f"open {app_name}" in request_lower:
-            requested_application = app_name
-            break
+    if needs_application:
+        for app_name in ALLOWED_APPLICATIONS:
+            if re.search(
+                r"\b(?:open|launch|start|run)\s+"
+                + re.escape(app_name)
+                + r"\b",
+                request_lower,
+            ):
+                requested_application = app_name
+                break
+
+
 
 
     needs_website = any(
