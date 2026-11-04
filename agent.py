@@ -647,11 +647,8 @@ def execute_ai_agent_task(message):
         )
 
 
-        if any(
-            phrase in request_lower
-            for phrase in application_request_phrases
-        ):
-            return (
+
+        return (
                 "I couldn't identify a valid application action for "
                 "your request. Please check the application name "
                 "and try again."
