@@ -776,22 +776,6 @@ def execute_result_aware_task(message):
             "Please rephrase it."
         )
 
-
-        if any(
-            phrase in request_lower
-            for phrase in application_request_phrases
-        ):
-            return (
-                "I couldn't identify a valid application action for "
-                "your request. Please check the application name "
-                "and try again."
-            )
-
-        return (
-            "I couldn't determine the required action for this request. "
-            "Please rephrase it."
-        )
-
     if len(tasks) > 5:
         return "The plan contains too many tasks. Please simplify your request."
 
