@@ -3,9 +3,9 @@
 # Local inference using Ollama and Qwen 2.5 3B
 
 import json
+import re
 import urllib.request
 import urllib.error
-
 
 OLLAMA_API_URL = "http://localhost:11434/api/chat"
 MODEL_NAME = "qwen2.5:3b"
@@ -327,6 +327,24 @@ def _validate_recovery_arguments(tool, arguments):
 
     return None
 
+def _extract_explicit_weather_city(user_request):
+    """Extract a city only when the current request states it explicitly."""
+    if not isinstance(user_request, str):
+        return None
+
+    patterns = (
+        r"\bweather\s+(?:in|for|at)\s+([A-Za-z][A-Za-z .'-]*?)(?=[?.!,;]|$)",
+        r"\b(?:temperature|forecast)\s+(?:in|for|at)\s+([A-Za-z][A-Za-z .'-]*?)(?=[?.!,;]|$)",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, user_request, re.IGNORECASE)
+        if match:
+            city = re.sub(r"\s+", " ", match.group(1).strip())
+            if city:
+                return city
+
+    return None
 
 def ask_local_ai_for_recovery(
     user_request,
@@ -337,6 +355,35 @@ def ask_local_ai_for_recovery(
     past_experiences=None,
 ):
     """Recommend one safe recovery action using relevant past experiences."""
+
+    # Deterministically recover a missing weather city when the
+    # current request explicitly supplies it.
+    if (
+        failed_tool == "get_weather"
+        and isinstance(arguments, dict)
+        and not str(arguments.get("city", "")).strip()
+    ):
+        explicit_city = _extract_explicit_weather_city(user_request)
+
+        if explicit_city:
+            recovered_arguments = {"city": explicit_city}
+
+            validation_error = _validate_recovery_arguments(
+                "get_weather",
+                recovered_arguments,
+            )
+
+            if validation_error is None:
+                return {
+                    "recover": True,
+                    "tool": "get_weather",
+                    "arguments": recovered_arguments,
+                    "reason": (
+                        "The city was explicitly stated in the current "
+                        "request, so current-request information takes "
+                        "priority over past experiences."
+                    ),
+                }
 
     experiences_text = json.dumps(
         past_experiences or [],
