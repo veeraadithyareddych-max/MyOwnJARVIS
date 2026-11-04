@@ -20,6 +20,73 @@ class Phase6ExecutionTests(unittest.TestCase):
             "tool": tool_name,
             "error": f"{tool_name} failed",
         }
+    def test_website_was_requested_accepts_supported_phrases(self):
+        """Supported websites must require an explicit request."""
+
+        cases = [
+            ("Open Google.", "google"),
+            ("Visit GitHub.", "github"),
+            ("Go to YouTube.", "youtube"),
+        ]
+
+        for request, site_name in cases:
+            with self.subTest(request=request):
+                self.assertTrue(
+                    agent.website_was_requested(
+                        request,
+                        {"site_name": site_name},
+                    )
+                )
+
+    def test_conditional_executor_selects_requested_website(self):
+        """Each supported phrase should select the correct website."""
+
+        cases = [
+            ("Open Google.", "google"),
+            ("Visit GitHub.", "github"),
+            ("Go to YouTube.", "youtube"),
+        ]
+
+        for request, site_name in cases:
+            with self.subTest(request=request):
+                with patch(
+                    "agent.execute_with_recovery",
+                    return_value=(
+                        {
+                            "success": True,
+                            "tool": "open_website",
+                            "data": {"message": "Website accepted"},
+                        },
+                        1,
+                        True,
+                    ),
+                ) as mock_execute:
+                    agent.execute_conditional_task(request)
+
+                    mock_execute.assert_called_once_with(
+                        "open_website",
+                        {"site_name": site_name},
+                    )
+
+    def test_website_was_requested_rejects_unrequested_site(self):
+        """A website must not be opened if it was not requested."""
+
+        self.assertFalse(
+            agent.website_was_requested(
+                "Open Google.",
+                {"site_name": "github"},
+            )
+        )
+
+    def test_website_was_requested_rejects_unsupported_site(self):
+        """Unsupported websites must remain blocked."""
+
+        self.assertFalse(
+            agent.website_was_requested(
+                "Open example.com.",
+                {"site_name": "example.com"},
+            )
+        )
 
     @patch("agent.ask_local_ai_for_plan", return_value={"tasks": []})
     def test_empty_plan_recognizes_explicit_application_request(

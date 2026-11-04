@@ -1911,92 +1911,34 @@ def main():
         intent = predict_intent(user_message)
         print("Detected intent:", intent)
 
-        message_lower = user_message.casefold()
         
+        message_lower = user_message.casefold()
+
+       
         # -------------------------------------------------
-        # DIRECT HANDLING FOR SUPPORTED WEBSITE REQUESTS
+        # ROUTE SUPPORTED TOOL REQUESTS THROUGH THE AGENT
         # -------------------------------------------------
-
-        supported_sites = {
-            "google": "google",
-            "youtube": "youtube",
-            "github": "github",
-            "instagram": "instagram",
-            "facebook": "facebook",
-            "linkedin": "linkedin",
-        }
-
-        website_request = (
-            message_lower.startswith("open ")
-            or message_lower.startswith("visit ")
-            or message_lower.startswith("go to ")
-        )
-
-        if website_request:
-            matched_site = next(
-                (
-                    site
-                    for site in supported_sites
-                    if re.search(
-                        rf"\b{re.escape(site)}\b",
-                        message_lower,
-                    )
-                ),
-                None,
-            )
-
-            if matched_site:
-                response = execute_tool(
-                    "open_website",
-                    site_name=supported_sites[matched_site],
-                )
-
-                try:
-                    save_java_examples_from_response(str(response))
-                except (OSError, ValueError, TypeError) as error:
-                    print(
-                        "JARVIS: Warning - couldn't save the Java example:",
-                        error,
-                    )
-
-                SESSION_CONVERSATION_HISTORY.append(
-                    (user_message, str(response))
-                )
-                SESSION_CONVERSATION_HISTORY[:] = (
-                    SESSION_CONVERSATION_HISTORY[-MAX_CONVERSATION_TURNS:]
-                )
-
-                print("JARVIS:", response)
-                continue
-
 
         tool_keywords = [
-            "internet", "connection", "weather", "temperature",
-            "open ", "visit ",
+            "internet",
+            "connection",
+            "weather",
+            "temperature",
+            "open ",
+            "visit ",
+            "go to ",
         ]
 
         requires_tool = any(
-            keyword in message_lower for keyword in tool_keywords
+            keyword in message_lower
+            for keyword in tool_keywords
         )
 
         if requires_tool:
-            multi_step_keywords = [
-                "if", "and then", "after that", "based on", "depending on",
-            ]
-
-            is_multi_step = any(
-                keyword in message_lower
-                for keyword in multi_step_keywords
-            )
-
-            if is_multi_step:
-                response = execute_conditional_task(user_message)
-            else:
-                response = execute_ai_agent_task(user_message)
+            response = execute_conditional_task(user_message)
 
             if response is None:
                 response = respond_to_user(user_message)
-
         else:
             response = respond_to_user(user_message)
 

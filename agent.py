@@ -568,26 +568,33 @@ def execute_multi_step_task(message):
 # 8. AI PLANNER AND EXECUTOR
 # ============================================================
 
+
 def website_was_requested(user_request, arguments):
     """Only permit website actions explicitly requested by the user."""
 
     site_name = arguments.get("site_name")
 
+    if not isinstance(site_name, str):
+        return False
+
+    site_name = site_name.strip().casefold()
+
     if site_name not in ALLOWED_WEBSITES:
         return False
 
-    request_lower = user_request.lower()
+    request_lower = " ".join(user_request.casefold().split())
 
     accepted_phrases = {
-        "google": ["open google", "visit google"],
-        "youtube": ["open youtube", "visit youtube"],
-        "github": ["open github", "visit github"],
+        "google": ["open google", "visit google", "go to google"],
+        "youtube": ["open youtube", "visit youtube", "go to youtube"],
+        "github": ["open github", "visit github", "go to github"],
     }
 
     return any(
         phrase in request_lower
         for phrase in accepted_phrases[site_name]
     )
+
 
 
 def is_application_launch_request(message):
@@ -1151,6 +1158,7 @@ def execute_conditional_task(message):
             requested_application = app_name
             break
 
+
     needs_website = any(
         phrase in request_lower
         for phrase in [
@@ -1160,15 +1168,23 @@ def execute_conditional_task(message):
             "visit google",
             "visit youtube",
             "visit github",
+            "go to google",
+            "go to youtube",
+            "go to github",
         ]
     )
+
 
     requested_website = None
 
     for site_name in ALLOWED_WEBSITES:
-        if (
-            f"open {site_name}" in request_lower
-            or f"visit {site_name}" in request_lower
+        if any(
+            phrase in request_lower
+            for phrase in [
+                f"open {site_name}",
+                f"visit {site_name}",
+                f"go to {site_name}",
+            ]
         ):
             requested_website = site_name
             break
