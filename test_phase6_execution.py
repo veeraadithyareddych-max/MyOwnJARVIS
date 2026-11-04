@@ -1,5 +1,4 @@
-﻿
-import unittest
+﻿import unittest
 from unittest.mock import patch
 
 import agent
@@ -53,14 +52,8 @@ class Phase6ExecutionTests(unittest.TestCase):
             with self.subTest(executor=executor.__name__):
                 result = executor("I don't want to open Notepad.")
 
-                self.assertIn(
-                    "Please rephrase it.",
-                    result,
-                )
-                self.assertNotIn(
-                    "valid application action",
-                    result,
-                )
+                self.assertIn("Please rephrase it.", result)
+                self.assertNotIn("valid application action", result)
 
     @patch("agent.ask_local_ai_for_plan", return_value={"tasks": []})
     def test_empty_plan_for_unrelated_request_uses_generic_response(
@@ -76,11 +69,37 @@ class Phase6ExecutionTests(unittest.TestCase):
                 result = executor("Tell me something interesting.")
 
                 self.assertIn("Please rephrase it.", result)
-                self.assertNotIn(
-                    "valid application action",
-                    result,
-                )
+                self.assertNotIn("valid application action", result)
 
+    def test_plan_cannot_substitute_unrequested_application(self):
+        """AI plans must not substitute another requested application."""
+
+        for executor in (
+            agent.execute_ai_agent_task,
+            agent.execute_result_aware_task,
+        ):
+            with self.subTest(executor=executor.__name__):
+                with patch(
+                    "agent.ask_local_ai_for_plan",
+                    return_value={
+                        "tasks": [
+                            {
+                                "tool": "open_application",
+                                "arguments": {"app_name": "calculator"},
+                            }
+                        ]
+                    },
+                ), patch("agent.execute_tool") as mock_execute, patch(
+                    "agent.ask_local_ai",
+                    return_value="Summary",
+                ):
+                    result = executor("Open Notepad.")
+
+                    self.assertIn(
+                        "Application action blocked",
+                        result,
+                    )
+                    mock_execute.assert_not_called()
 
     @patch("agent.format_tool_result")
     @patch("agent.ask_local_ai_for_next_action")
@@ -431,7 +450,6 @@ class Phase6ExecutionTests(unittest.TestCase):
         )
         self.assertIn("Malformed verification evidence.", result)
 
-
     @patch("agent.verify_internet_connection")
     @patch("agent.verify_application_running")
     @patch("agent.format_tool_result")
@@ -453,15 +471,13 @@ class Phase6ExecutionTests(unittest.TestCase):
 
         mock_format.return_value = "Application launch request accepted"
 
-        mock_application_verify.return_value = (
-            agent.make_verification_result(
-                True,
-                "open_application",
-                evidence={
-                    "check": "Mocked Windows process listing",
-                    "observed": "Detected running process: notepad.exe",
-                },
-            )
+        mock_application_verify.return_value = agent.make_verification_result(
+            True,
+            "open_application",
+            evidence={
+                "check": "Mocked Windows process listing",
+                "observed": "Detected running process: notepad.exe",
+            },
         )
 
         result = agent.execute_conditional_task("Open Notepad.")
@@ -476,9 +492,6 @@ class Phase6ExecutionTests(unittest.TestCase):
 
         mock_application_verify.assert_called_once_with("notepad")
         mock_internet_verify.assert_not_called()
-
-
-
 
     @patch("agent.verify_internet_connection")
     @patch("agent.format_tool_result")

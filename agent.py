@@ -619,6 +619,38 @@ def is_application_launch_request(message):
     )
 
 
+def application_was_requested(user_request, arguments):
+    """Only permit launching an application explicitly requested by the user."""
+
+    app_name = arguments.get("app_name")
+
+    if not isinstance(app_name, str) or not app_name.strip():
+        return False
+
+    if app_name.lower() not in ALLOWED_APPLICATIONS:
+        return False
+
+    # Reject negative requests such as "I don't want to open Notepad."
+    if not is_application_launch_request(user_request):
+        return False
+
+    # Normalize whitespace and punctuation before checking app names.
+    import re
+
+    request = " ".join(user_request.lower().split())
+    request = re.sub(r"[^\w\s]", " ", request)
+    request = " ".join(request.split())
+
+    requested_app = " ".join(app_name.lower().split())
+
+    # Allow multiple applications when each is explicitly named
+    # in the user's launch request.
+    return re.search(
+        r"\b" + re.escape(requested_app) + r"\b",
+        request,
+    ) is not None
+
+
 def execute_ai_agent_task(message):
     """Ask the local AI to plan tasks, validate them, and execute them."""
 
@@ -648,16 +680,7 @@ def execute_ai_agent_task(message):
 
 
 
-        return (
-                "I couldn't identify a valid application action for "
-                "your request. Please check the application name "
-                "and try again."
-            )
 
-        return (
-            "I couldn't determine the required action for this request. "
-            "Please rephrase it."
-        )
 
     if len(tasks) > 5:
         return "The plan contains too many tasks. Please simplify your request."
@@ -684,6 +707,15 @@ def execute_ai_agent_task(message):
             and not website_was_requested(message, normalized_arguments)
         ):
             return "Website action blocked because it was not requested."
+
+        if (
+            tool_name == "open_application"
+            and not application_was_requested(
+                message,
+                normalized_arguments,
+            )
+        ):
+            return "Application action blocked because it was not requested."
 
         print(f"Agent step {step_number}: {tool_name}")
 
@@ -773,6 +805,16 @@ def execute_result_aware_task(message):
             and not website_was_requested(message, normalized_arguments)
         ):
             return "Website action blocked because it was not requested."
+
+        if (
+            tool_name == "open_application"
+            and not application_was_requested(
+                message,
+                normalized_arguments,
+            )
+        ):
+            return "Application action blocked because it was not requested."
+
 
         print(f"Agent step {step_number}: {tool_name}")
 
