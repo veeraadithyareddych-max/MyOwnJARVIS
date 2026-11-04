@@ -1479,7 +1479,7 @@ def respond_to_user(message):
 
     if not normalized_message:
         return "Please enter a message."
-    
+
     # -------------------------------------------------
     # SHORT-TERM CONVERSATION RECALL
     # -------------------------------------------------
@@ -1688,7 +1688,7 @@ def respond_to_user(message):
     # GENERAL AI RESPONSE
     # -----------------------------------------------------
 
-    
+
     relevant_memories = get_relevant_memories(
         original_message,
         limit=5,
@@ -1911,10 +1911,10 @@ def main():
         intent = predict_intent(user_message)
         print("Detected intent:", intent)
 
-        
+
         message_lower = user_message.casefold()
 
-       
+
         # -------------------------------------------------
         # ROUTE SUPPORTED TOOL REQUESTS THROUGH THE AGENT
         # -------------------------------------------------
