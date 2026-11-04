@@ -510,6 +510,73 @@ class ToolExecutionTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIn("invalid wind speed", result["error"])
 
+
+    # ========================================================
+    # APPLICATION PROCESS VERIFICATION TESTS
+    # ========================================================
+
+    @patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=0,
+            stdout='"notepad.exe","1234","Console","1","10,000 K"\n',
+            stderr="",
+        ),
+    )
+    def test_application_verification_detects_running_process(
+        self, mock_run
+    ):
+        result = agent.verify_application_running("notepad")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "verified")
+        self.assertEqual(result["tool"], "open_application")
+        self.assertIn("notepad.exe", result["evidence"]["observed"])
+        mock_run.assert_called_once()
+
+    @patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=0,
+            stdout='"explorer.exe","1234","Console","1","10,000 K"\n',
+            stderr="",
+        ),
+    )
+    def test_application_verification_fails_when_process_is_missing(
+        self, mock_run
+    ):
+        result = agent.verify_application_running("notepad")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIsNone(result["evidence"])
+
+    @patch(
+        "subprocess.run",
+        return_value=MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="Access denied",
+        ),
+    )
+    def test_application_verification_fails_when_process_query_fails(
+        self, mock_run
+    ):
+        result = agent.verify_application_running("notepad")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        self.assertIsNone(result["evidence"])
+
+    def test_application_verification_rejects_unknown_application(self):
+        with patch("subprocess.run") as mock_run:
+            result = agent.verify_application_running("unknown_app")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "failed")
+        mock_run.assert_not_called()
+
+
     # ========================================================
     # TOOL RETRY SYSTEM TESTS
     # ========================================================

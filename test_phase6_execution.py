@@ -1,4 +1,4 @@
-﻿
+
 import unittest
 from unittest.mock import patch
 
@@ -371,16 +371,19 @@ class Phase6ExecutionTests(unittest.TestCase):
         )
         self.assertIn("Malformed verification evidence.", result)
 
+
     @patch("agent.verify_internet_connection")
+    @patch("agent.verify_application_running")
     @patch("agent.format_tool_result")
     @patch("agent.execute_with_recovery")
     def test_application_launch_is_not_internet_verified(
         self,
         mock_execute,
         mock_format,
-        mock_verify,
+        mock_application_verify,
+        mock_internet_verify,
     ):
-        """An application launch must not trigger internet verification."""
+        """Application launches use process verification, not internet verification."""
 
         mock_execute.return_value = (
             self.success_result("open_application"),
@@ -390,20 +393,32 @@ class Phase6ExecutionTests(unittest.TestCase):
 
         mock_format.return_value = "Application launch request accepted"
 
+        mock_application_verify.return_value = (
+            agent.make_verification_result(
+                True,
+                "open_application",
+                evidence={
+                    "check": "Mocked Windows process listing",
+                    "observed": "Detected running process: notepad.exe",
+                },
+            )
+        )
+
         result = agent.execute_conditional_task("Open Notepad.")
 
         self.assertIn("Application launch request accepted", result)
-        self.assertIn("Action accepted.", result)
-        self.assertIn(
-            "outcome has not been independently verified",
+        self.assertIn("VERIFIED", result)
+        self.assertIn("independently verified", result)
+        self.assertNotIn(
+            "Internet connectivity independently verified.",
             result,
         )
-        self.assertNotIn("Task completed successfully.", result)
-        self.assertNotIn(
-        "Internet connectivity independently verified.",
-        result,
-        )
-        mock_verify.assert_not_called()
+
+        mock_application_verify.assert_called_once_with("notepad")
+        mock_internet_verify.assert_not_called()
+
+
+
 
     @patch("agent.verify_internet_connection")
     @patch("agent.format_tool_result")

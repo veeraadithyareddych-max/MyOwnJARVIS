@@ -105,6 +105,92 @@ def make_verification_result(verified, tool, evidence=None, error=None):
     }
 
 
+def verify_application_running(app_name):
+    """Independently verify that an approved application's process is running."""
+
+    import subprocess
+
+    process_names = {
+        "notepad": ["notepad.exe"],
+        "calculator": ["Calculator.exe", "CalculatorApp.exe"],
+        "paint": ["mspaint.exe"],
+    }
+
+    if not isinstance(app_name, str) or not app_name.strip():
+        return make_verification_result(
+            False,
+            "open_application",
+            error="Application verification requires a valid application name.",
+        )
+
+    app_name = app_name.strip().casefold()
+    expected_processes = process_names.get(app_name)
+
+    if expected_processes is None:
+        return make_verification_result(
+            False,
+            "open_application",
+            error="Cannot verify an application that is not approved.",
+        )
+
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            return make_verification_result(
+                False,
+                "open_application",
+                error="Windows process listing failed.",
+            )
+
+        running_processes = {
+            line.split(",", 1)[0].strip('"').casefold()
+            for line in result.stdout.splitlines()
+            if line.strip()
+        }
+
+        matched_processes = [
+            name
+            for name in expected_processes
+            if name.casefold() in running_processes
+        ]
+
+        if not matched_processes:
+            return make_verification_result(
+                False,
+                "open_application",
+                error=(
+                    f"No expected process was detected for "
+                    f"{app_name.title()}."
+                ),
+            )
+
+        return make_verification_result(
+            True,
+            "open_application",
+            evidence={
+                "check": "Windows tasklist process listing",
+                "observed": (
+                    "Detected running process: "
+                    + ", ".join(matched_processes)
+                ),
+            },
+        )
+
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return make_verification_result(
+            False,
+            "open_application",
+            error=f"Application process verification failed: {error}",
+        )
+
+
 def verify_internet_connection(timeout=5):
     """Independently verify internet reachability using an HTTP request."""
 
@@ -1030,8 +1116,8 @@ def execute_conditional_task(message):
             for item in execution_history
             if (
                 isinstance(item, dict)
-                and item.get("success") is True
-                and item.get("tool") != "internet_verification"
+                                and item.get("success") is True
+                and not item.get("tool", "").endswith("_verification")
             )
         }
 
@@ -1199,6 +1285,49 @@ def execute_conditional_task(message):
                 + ", ".join(sorted(missing_tools))
             )
 
+                    # Independently verify successful application launches.
+        if (
+            tool_name == "open_application"
+            and "open_application" in get_successful_tools()
+        ):
+            verification = verify_application_running(
+                arguments.get("app_name")
+            )
+            verification_success = verification_evidence_is_valid(
+                verification
+            )
+            verification_message = format_verification_evidence(
+                verification
+            )
+            verification_status = (
+                "verified" if verification_success else "failed"
+            )
+
+            execution_history.append({
+                "tool": "application_verification",
+                "arguments": {
+                    "app_name": arguments.get("app_name")
+                },
+                "success": verification_success,
+                "status": verification_status,
+                "message": verification_message,
+                "result": verification,
+                "attempts": 1,
+            })
+
+            print(
+                f"Agent verification: "
+                f"{verification_status.upper()}: "
+                f"{verification_message}"
+            )
+
+            if not verification_success:
+                return finish(
+                    "Task incomplete: Windows accepted the application "
+                    "launch request, but the application's running "
+                    "process could not be independently verified."
+                )
+
         if (
             tool_name == "check_internet"
             and "check_internet" in get_successful_tools()
@@ -1234,6 +1363,13 @@ def execute_conditional_task(message):
                 "verification failed."
             )
 
+
+        if tool_name == "open_application":
+            return finish(
+                "Application launch accepted and running process "
+                "independently verified."
+            )
+
         return finish(
             (
                 "Action accepted. The tool reported success, "
@@ -1242,6 +1378,7 @@ def execute_conditional_task(message):
             if succeeded
             else "Task incomplete."
         )
+
 
     # --------------------------------------------------------
     # Multi-step AI execution
@@ -1443,6 +1580,46 @@ def execute_conditional_task(message):
                 return finish(
                     "Task incomplete: the internet-check action succeeded, "
                     "but independent verification failed."
+                )
+
+        # Independently verify successful application launches.
+        if actual_tool == "open_application":
+            verification = verify_application_running(
+                actual_arguments.get("app_name")
+            )
+            verification_success = verification_evidence_is_valid(
+                verification
+            )
+            verification_message = format_verification_evidence(
+                verification
+            )
+            verification_status = (
+                "verified" if verification_success else "failed"
+            )
+
+            execution_history.append({
+                "tool": "application_verification",
+                "arguments": {
+                    "app_name": actual_arguments.get("app_name")
+                },
+                "success": verification_success,
+                "status": verification_status,
+                "message": verification_message,
+                "result": verification,
+                "attempts": 1,
+            })
+
+            print(
+                f"Agent verification: "
+                f"{verification_status.upper()}: "
+                f"{verification_message}"
+            )
+
+            if not verification_success:
+                return finish(
+                    "Task incomplete: Windows accepted the application "
+                    "launch request, but the application's running "
+                    "process could not be independently verified."
                 )
 
         successful_tools = get_successful_tools()
