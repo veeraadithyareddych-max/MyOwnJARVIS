@@ -493,6 +493,17 @@ def validate_ai_plan(plan_data, user_request):
         if error:
             return None, f"Step {step_number}: {error}"
 
+        semantic_error = validate_requested_action(
+            tool_name,
+            normalized_arguments,
+            user_request,
+        )
+
+        if semantic_error:
+            return None, (
+                f"Step {step_number}: {semantic_error}"
+            )
+
         if (
             tool_name == "open_website"
             and not website_was_requested(
@@ -1041,7 +1052,8 @@ def validate_requested_action(tool_name, arguments, message):
                 selected_application.casefold()
                 != requested_application.casefold()
             ):
-                return (
+              return (
+                    "Application action blocked. "
                     f"You requested {requested_application}, "
                     f"but the AI selected {selected_application}."
                 )

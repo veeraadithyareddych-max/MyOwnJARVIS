@@ -1034,6 +1034,33 @@ class Phase6ExecutionTests(unittest.TestCase):
             "Step 2: get_weather blocked because Step 1 failed",
             result,
         )
+    @patch("agent.ask_local_ai_for_plan")
+    def test_validate_ai_plan_rejects_wrong_weather_city(
+        self,
+        mock_plan,
+    ):
+        """AI plan validation must reject weather for the wrong city."""
+
+        mock_plan.return_value = {
+            "tasks": [
+                {
+                    "tool": "get_weather",
+                    "arguments": {"city": "Delhi"},
+                },
+            ]
+        }
+
+        tasks, error = agent.validate_ai_plan(
+            mock_plan.return_value,
+            "Get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(tasks)
+
+        self.assertIn(
+            "You requested weather for Mumbai, but the AI selected Delhi.",
+            error,
+        )
     @patch("agent.ask_local_ai")
     @patch("agent.execute_tool")
     @patch("agent.ask_local_ai_for_plan")
