@@ -423,6 +423,75 @@ class Phase6ExecutionTests(unittest.TestCase):
             [1],
         )
 
+    def test_validate_ai_plan_accepts_empty_dependency_list(self):
+        """An empty dependency list is valid."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                        "depends_on": [],
+                    }
+                ]
+            },
+            "Check my internet connection.",
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(tasks[0]["depends_on"], [])
+
+    def test_validate_ai_plan_rejects_duplicate_dependencies(self):
+        """A task cannot declare the same dependency more than once."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                    },
+                    {
+                        "tool": "get_weather",
+                        "arguments": {"city": "Mumbai"},
+                        "depends_on": [1, 1],
+                    },
+                ]
+            },
+            "Check internet and then get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn("duplicate dependencies", error)
+
+    def test_validate_ai_plan_copies_dependency_list(self):
+        """Normalized dependencies must not share the planner's list."""
+
+        dependencies = [1]
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                    },
+                    {
+                        "tool": "get_weather",
+                        "arguments": {"city": "Mumbai"},
+                        "depends_on": dependencies,
+                    },
+                ]
+            },
+            "Check internet and then get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(tasks[1]["depends_on"], [1])
+        self.assertIsNot(tasks[1]["depends_on"], dependencies)
+
+
     def test_validate_ai_plan_rejects_invalid_dependency_type(self):
         """Dependencies must be provided as a list."""
 
