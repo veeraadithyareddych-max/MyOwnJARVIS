@@ -1,4 +1,4 @@
-﻿
+
 # ============================================================
 # MyOwnJARVIS - Agent Tool Registry and Task Planner
 # Structured Tool Results + AI Recovery + Memory
@@ -196,6 +196,70 @@ def verify_application_running(app_name):
         time.sleep(0.5)
 
 
+def verify_website_reachable(site_name, timeout=5):
+    """Independently verify that an approved website is reachable."""
+
+    website_urls = {
+        "google": "https://www.google.com",
+        "youtube": "https://www.youtube.com",
+        "github": "https://github.com",
+    }
+
+    if not isinstance(site_name, str) or not site_name.strip():
+        return make_verification_result(
+            False,
+            "open_website",
+            error="Website verification requires a valid website name.",
+        )
+
+    site_name = site_name.strip().casefold()
+    url = website_urls.get(site_name)
+
+    if url is None:
+        return make_verification_result(
+            False,
+            "open_website",
+            error="Cannot verify a website that is not approved.",
+        )
+
+    try:
+        request = urllib.request.Request(
+            url,
+            method="HEAD",
+            headers={"User-Agent": "MyOwnJARVIS/1.0"},
+        )
+
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status_code = response.getcode()
+
+        if 200 <= status_code < 400:
+            return make_verification_result(
+                True,
+                "open_website",
+                evidence={
+                    "check": "Independent HTTP HEAD request",
+                    "observed": f"HTTP {status_code} returned by {url}",
+                },
+            )
+
+        return make_verification_result(
+            False,
+            "open_website",
+            error=(
+                f"Website verification returned HTTP {status_code} "
+                f"for {url}."
+            ),
+        )
+
+    except Exception as error:
+        return make_verification_result(
+            False,
+            "open_website",
+            error=(
+                f"Independent website verification failed for "
+                f"{site_name.title()}: {error}"
+            ),
+        )
 def verify_internet_connection(timeout=5):
     """Independently verify internet reachability using an HTTP request."""
 
@@ -482,6 +546,21 @@ def format_verification_evidence(verification):
 # 6. BASIC TASK PLANNER
 # ============================================================
 
+def execute_website_with_verification(arguments):
+    """Open an approved website and independently verify reachability."""
+
+    result = execute_tool("open_website", **arguments)
+
+    if not tool_result_succeeded("open_website", result):
+        return result, None
+
+    verification = verify_website_reachable(
+        arguments.get("site_name")
+    )
+
+    return result, verification
+
+
 def plan_task(message):
     """Identify simple supported tasks using keyword matching."""
 
@@ -743,6 +822,24 @@ def execute_ai_agent_task(message):
 
     return "\n".join(results)
 
+def record_blocked_steps(results, tasks, failed_step_number):
+    """Record all planned steps that cannot execute after a failure."""
+
+    for blocked_step_number in range(
+        failed_step_number + 1,
+        len(tasks) + 1,
+    ):
+        blocked_task = tasks[blocked_step_number - 1]
+
+        if isinstance(blocked_task, dict):
+            blocked_tool = blocked_task.get("tool", "unknown")
+        else:
+            blocked_tool = "unknown"
+
+        results.append(
+            f"Step {blocked_step_number}: {blocked_tool} "
+            f"blocked because Step {failed_step_number} failed"
+        )
 
 # ============================================================
 # 9. RESULT-AWARE TASK EXECUTION
@@ -750,7 +847,7 @@ def execute_ai_agent_task(message):
 
 
 def execute_result_aware_task(message):
-    """Execute AI-planned tasks and stop after a failed internet check."""
+    """Execute AI-planned tasks with verified results and execution history."""
 
     plan_data = ask_local_ai_for_plan(message)
 
@@ -761,7 +858,6 @@ def execute_result_aware_task(message):
 
     if not isinstance(tasks, list):
         return "The AI planner returned an invalid task list."
-
 
     if not tasks:
         if is_application_launch_request(message):
@@ -779,11 +875,51 @@ def execute_result_aware_task(message):
     if len(tasks) > 5:
         return "The plan contains too many tasks. Please simplify your request."
 
+    # Keep a complete execution history.
+    # Every planned step must end up as either:
+    # - executed successfully
+    # - executed and failed
+    # - blocked because an earlier step failed
     results = []
 
+    execution_failed = False
+    failed_step_number = None
+
     for step_number, task in enumerate(tasks, start=1):
+
+        # ------------------------------------------------------------
+        # If an earlier step failed, do not execute dependent steps.
+        # Record them explicitly as blocked instead.
+        # ------------------------------------------------------------
+        if execution_failed:
+            blocked_tool = "unknown"
+
+            if isinstance(task, dict):
+                blocked_tool = task.get("tool", "unknown")
+
+            results.append(
+                f"Step {step_number}: {blocked_tool} blocked because "
+                f"Step {failed_step_number} failed"
+            )
+
+            continue
+
         if not isinstance(task, dict):
-            return "The AI planner returned an invalid task."
+            results.append(
+                f"Step {step_number}: Invalid task."
+            )
+
+            execution_failed = True
+            failed_step_number = step_number
+
+            # Record that all remaining tasks are blocked.
+            record_blocked_steps(
+    results,
+    tasks,
+    step_number,
+)
+
+            break
 
         tool_name = task.get("tool")
         arguments = task.get("arguments", {})
@@ -794,13 +930,45 @@ def execute_result_aware_task(message):
         )
 
         if error:
-            return error
+            results.append(
+                f"Step {step_number}: {error}"
+            )
+
+            execution_failed = True
+            failed_step_number = step_number
+
+            # Preserve execution history for all tasks that were
+            # planned but could not safely execute.
+            record_blocked_steps(
+    results,
+    tasks,
+    step_number,
+)
+
+            break
 
         if (
             tool_name == "open_website"
-            and not website_was_requested(message, normalized_arguments)
+            and not website_was_requested(
+                message,
+                normalized_arguments,
+            )
         ):
-            return "Website action blocked because it was not requested."
+            results.append(
+                f"Step {step_number}: Website action blocked because "
+                "it was not requested."
+            )
+
+            execution_failed = True
+            failed_step_number = step_number
+
+            record_blocked_steps(
+    results,
+    tasks,
+    step_number,
+)
+
+            break
 
         if (
             tool_name == "open_application"
@@ -809,37 +977,137 @@ def execute_result_aware_task(message):
                 normalized_arguments,
             )
         ):
-            return "Application action blocked because it was not requested."
+            results.append(
+                f"Step {step_number}: Application action blocked because "
+                "it was not requested."
+            )
 
+            execution_failed = True
+            failed_step_number = step_number
+
+            record_blocked_steps(
+    results,
+    tasks,
+    step_number,
+)
+
+            break
 
         print(f"Agent step {step_number}: {tool_name}")
 
-        result = execute_tool(tool_name, **normalized_arguments)
-        succeeded = tool_result_succeeded(tool_name, result)
+        verification = None
 
-        results.append(
-            f"{tool_name}: {format_tool_result(result)}"
-        )
+        # ------------------------------------------------------------
+        # Website execution + independent verification
+        # ------------------------------------------------------------
+        if tool_name == "open_website":
+            result, verification = execute_website_with_verification(
+                normalized_arguments
+            )
 
-        if tool_name == "check_internet":
-            if not succeeded:
-                print("Agent observation: Internet could not be confirmed.")
-                print("Agent decision: Stop remaining tasks.")
-                break
+            succeeded = tool_result_succeeded(
+                tool_name,
+                result,
+            )
 
-            print("Agent observation: Internet check succeeded.")
-            print("Agent decision: Continue with remaining tasks.")
+            if succeeded:
+                if verification_evidence_is_valid(
+                    verification
+                ):
+                    results.append(
+                        f"Step {step_number}: "
+                        f"{tool_name}: {format_tool_result(result)}"
+                    )
 
-        elif not succeeded:
-            print(f"Agent observation: {tool_name} failed.")
+                    results.append(
+                        "Independent verification: "
+                        + format_verification_evidence(
+                            verification
+                        )
+                    )
+                else:
+                    results.append(
+                        f"Step {step_number}: "
+                        f"{tool_name}: {format_tool_result(result)}"
+                    )
+
+                    results.append(
+                        "Independent verification failed."
+                    )
+
+                    succeeded = False
+            else:
+                results.append(
+                    f"Step {step_number}: "
+                    f"{tool_name}: {format_tool_result(result)}"
+                )
+
+        # ------------------------------------------------------------
+        # Normal tool execution
+        # ------------------------------------------------------------
+        else:
+            result = execute_tool(
+                tool_name,
+                **normalized_arguments
+            )
+
+            succeeded = tool_result_succeeded(
+                tool_name,
+                result
+            )
+
+            results.append(
+                f"Step {step_number}: "
+                f"{tool_name}: {format_tool_result(result)}"
+            )
+
+        # ------------------------------------------------------------
+        # Failure handling
+        # ------------------------------------------------------------
+        if not succeeded:
+            execution_failed = True
+            failed_step_number = step_number
+
+            print(
+                f"Agent observation: {tool_name} failed."
+            )
+
+            print(
+                "Agent decision: Stop remaining tasks."
+            )
+
+            # Explicitly preserve the execution history.
+            results.append(
+                "Execution stopped because the tool failed."
+            )
+
+            # Record every remaining planned task as blocked.
+            record_blocked_steps(
+                results,
+                tasks,
+                step_number,
+            )
+
+
             break
+
+        # ------------------------------------------------------------
+        # Special handling for internet prerequisite
+        # ------------------------------------------------------------
+        if tool_name == "check_internet":
+            print(
+                "Agent observation: Internet check succeeded."
+            )
+            print(
+                "Agent decision: Continue with remaining tasks."
+            )
 
     summary_prompt = (
         "You are MyOwnJARVIS. Summarize the actual tool results "
         "in simple language. Do not invent facts or claim that "
         "an unexecuted task succeeded.\n\n"
         f"User request: {message}\n\n"
-        "Actual tool results:\n"
+        "Actual execution history:\n"
         + "\n".join(results)
     )
 

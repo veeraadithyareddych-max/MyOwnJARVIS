@@ -1,5 +1,4 @@
-﻿
-import unittest
+﻿import unittest
 from unittest.mock import patch
 
 import agent
@@ -268,6 +267,76 @@ class Phase6ExecutionTests(unittest.TestCase):
                         result,
                     )
                     mock_execute.assert_not_called()
+
+    @patch("agent.ask_local_ai", return_value="Summary")
+    @patch("agent.execute_tool")
+    @patch(
+        "agent.ask_local_ai_for_plan",
+        return_value={
+            "tasks": [
+                {
+                    "tool": "check_internet",
+                    "arguments": {},
+                },
+                {
+                    "tool": "get_weather",
+                    "arguments": {"city": "Mumbai"},
+                },
+            ]
+        },
+    )
+    def test_result_aware_task_records_failed_step_and_blocks_following_steps(
+        self,
+        mock_plan,
+        mock_execute,
+        mock_ai,
+    ):
+        """
+        A failed step must block later steps and preserve execution history.
+
+        The failed step must remain in the result history, and every
+        dependent step that was not executed must also be explicitly
+        recorded as blocked.
+        """
+
+        mock_execute.return_value = self.failure_result(
+            "check_internet"
+        )
+
+        result = agent.execute_result_aware_task(
+            "Check my internet connection and then get the weather in Mumbai."
+        )
+
+        # Failed Step 1 must be preserved.
+        self.assertIn("check_internet", result)
+
+        # The executor must explicitly record why Step 2 was not executed.
+        self.assertIn(
+            "Execution stopped because the tool failed.",
+            result,
+        )
+
+        self.assertIn(
+            "Step 2: get_weather blocked because Step 1 failed",
+            result,
+        )
+
+        # Only Step 1 is actually executed.
+        executed_tools = [
+            call.args[0]
+            for call in mock_execute.call_args_list
+        ]
+
+        self.assertEqual(
+            executed_tools,
+            ["check_internet"],
+        )
+
+        # Step 2 must not appear as an executed tool result.
+        self.assertNotIn(
+            "get_weather: ",
+            result,
+        )
 
     @patch("agent.format_tool_result")
     @patch("agent.ask_local_ai_for_next_action")
