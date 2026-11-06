@@ -1009,6 +1009,8 @@ def task_has_failed_dependency(task, failed_steps):
         dependency in failed_steps
         for dependency in dependencies
     )
+
+
 def validate_requested_action(tool_name, arguments, message):
     """Validate that AI-selected arguments match the user's request."""
 
