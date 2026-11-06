@@ -501,6 +501,62 @@ class Phase6ExecutionTests(unittest.TestCase):
             error,
         )
 
+    def test_validate_ai_plan_rejects_boolean_dependency(self):
+        """Boolean values must not be accepted as step numbers."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                    },
+                    {
+                        "tool": "get_weather",
+                        "arguments": {
+                            "city": "Mumbai",
+                        },
+                        "depends_on": [True],
+                    },
+                ]
+            },
+            "Check my internet connection and then get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "must contain step numbers",
+            error,
+        )
+
+    def test_validate_ai_plan_rejects_unhashable_dependency(self):
+        """Dependency entries must be integers before duplicate checking."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                    },
+                    {
+                        "tool": "get_weather",
+                        "arguments": {
+                            "city": "Mumbai",
+                        },
+                        "depends_on": [[1]],
+                    },
+                ]
+            },
+            "Check my internet connection and then get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "must contain step numbers",
+            error,
+        )
+
     def test_validate_ai_plan_rejects_later_dependency(self):
         """A task must not depend on a step that comes after it."""
 

@@ -527,15 +527,9 @@ def validate_ai_plan(plan_data, user_request):
                     "depends_on must be a list."
                 )
 
-            if len(dependency_data) != len(set(dependency_data)):
-                return None, (
-                    f"Step {step_number}: "
-                    "depends_on contains duplicate dependencies."
-                )
-
             for dependency in dependency_data:
 
-                if not isinstance(dependency, int):
+                if type(dependency) is not int:
                     return None, (
                         f"Step {step_number}: "
                         "depends_on must contain step numbers."
@@ -564,6 +558,12 @@ def validate_ai_plan(plan_data, user_request):
                         f"Step {step_number}: "
                         f"Dependency on later step {dependency} is not allowed."
                     )
+
+            if len(dependency_data) != len(set(dependency_data)):
+                return None, (
+                    f"Step {step_number}: "
+                    "depends_on contains duplicate dependencies."
+                )
 
             normalized_task = {
                 "tool": tool_name,
