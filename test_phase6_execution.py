@@ -268,6 +268,132 @@ class Phase6ExecutionTests(unittest.TestCase):
                     )
                     mock_execute.assert_not_called()
 
+    def test_validate_ai_plan_rejects_non_dictionary_plan(self):
+        """The plan validator must reject a non-dictionary AI response."""
+
+        tasks, error = agent.validate_ai_plan(
+            "not a plan",
+            "Open Notepad.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertEqual(
+            error,
+            "The AI planner returned an invalid plan.",
+        )
+
+    def test_validate_ai_plan_rejects_invalid_task_structure(self):
+        """Every AI-generated task must be a dictionary."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    "open notepad",
+                ]
+            },
+            "Open Notepad.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "invalid task",
+            error,
+        )
+
+    def test_validate_ai_plan_rejects_unsupported_tool(self):
+        """The plan validator must reject tools outside the registry."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "delete_files",
+                        "arguments": {},
+                    }
+                ]
+            },
+            "Delete my files.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "Blocked unsupported tool",
+            error,
+        )
+
+    def test_validate_ai_plan_rejects_invalid_tool_arguments(self):
+        """Invalid tool arguments must prevent plan execution."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "get_weather",
+                        "arguments": {},
+                    }
+                ]
+            },
+            "Get the weather.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "weather tool needs a valid city",
+            error,
+        )
+
+    def test_validate_ai_plan_rejects_too_many_tasks(self):
+        """The plan validator must enforce the maximum task limit."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                    }
+                    for _ in range(6)
+                ]
+            },
+            "Check my internet connection.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "too many tasks",
+            error,
+        )
+
+    def test_validate_ai_plan_accepts_and_normalizes_valid_plan(self):
+        """A valid AI plan must be accepted and normalized."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "get_weather",
+                        "arguments": {
+                            "city": "  Mumbai  ",
+                        },
+                    }
+                ]
+            },
+            "Get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(
+            tasks,
+            [
+                {
+                    "tool": "get_weather",
+                    "arguments": {
+                        "city": "Mumbai",
+                    },
+                }
+            ],
+        )
+        
     @patch("agent.ask_local_ai", return_value="Summary")
     @patch("agent.execute_tool")
     @patch(

@@ -443,6 +443,88 @@ def validate_tool_arguments(tool_name, arguments):
 
     return None, "No validation rule exists for this tool."
 
+def validate_ai_plan(plan_data, user_request):
+    """Validate and normalize an AI-generated execution plan."""
+
+    if not isinstance(plan_data, dict):
+        return None, "The AI planner returned an invalid plan."
+
+    tasks = plan_data.get("tasks")
+
+    if not isinstance(tasks, list):
+        return None, "The AI planner returned an invalid task list."
+
+    if not tasks:
+        return [], None
+
+    if len(tasks) > 5:
+        return None, (
+            "The plan contains too many tasks. "
+            "Please simplify your request."
+        )
+
+    normalized_tasks = []
+
+    for step_number, task in enumerate(tasks, start=1):
+
+        if not isinstance(task, dict):
+            return None, (
+                f"Step {step_number}: "
+                "The AI planner returned an invalid task."
+            )
+
+        tool_name = task.get("tool")
+
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return None, (
+                f"Step {step_number}: "
+                "The AI planner did not specify a valid tool."
+            )
+
+        tool_name = tool_name.strip()
+
+        arguments = task.get("arguments", {})
+
+        normalized_arguments, error = validate_tool_arguments(
+            tool_name,
+            arguments,
+        )
+
+        if error:
+            return None, f"Step {step_number}: {error}"
+
+        if (
+            tool_name == "open_website"
+            and not website_was_requested(
+                user_request,
+                normalized_arguments,
+            )
+        ):
+            return None, (
+                f"Step {step_number}: "
+                "Website action blocked because it was not requested."
+            )
+
+        if (
+            tool_name == "open_application"
+            and not application_was_requested(
+                user_request,
+                normalized_arguments,
+            )
+        ):
+            return None, (
+                f"Step {step_number}: "
+                "Application action blocked because it was not requested."
+            )
+
+        normalized_tasks.append(
+            {
+                "tool": tool_name,
+                "arguments": normalized_arguments,
+            }
+        )
+
+    return normalized_tasks, None
 
 # ============================================================
 # 5. STRUCTURED RESULT HANDLING
@@ -851,13 +933,13 @@ def execute_result_aware_task(message):
 
     plan_data = ask_local_ai_for_plan(message)
 
-    if not isinstance(plan_data, dict):
-        return "The AI planner returned an invalid plan."
+    tasks, plan_error = validate_ai_plan(
+        plan_data,
+        message,
+    )
 
-    tasks = plan_data.get("tasks", [])
-
-    if not isinstance(tasks, list):
-        return "The AI planner returned an invalid task list."
+    if plan_error:
+        return plan_error
 
     if not tasks:
         if is_application_launch_request(message):
