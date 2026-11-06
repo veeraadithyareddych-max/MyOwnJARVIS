@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 from unittest.mock import patch
 
 import agent
@@ -821,6 +821,52 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertIn(
             "get_weather",
             result,
+        )
+
+    @patch("agent.ask_local_ai")
+    @patch("agent.execute_tool")
+    @patch("agent.ask_local_ai_for_plan")
+    def test_result_aware_task_preserves_structured_step_result(
+        self,
+        mock_plan,
+        mock_execute,
+        mock_ai,
+    ):
+        """Each executed step must preserve its structured tool result."""
+
+        mock_plan.return_value = {
+            "tasks": [
+                {
+                    "tool": "check_internet",
+                    "arguments": {},
+                },
+            ]
+        }
+
+        expected_result = self.success_result("check_internet")
+        mock_execute.return_value = expected_result
+
+        mock_ai.return_value = "Summary"
+
+        agent.execute_result_aware_task(
+            "Check my internet connection."
+        )
+
+        summary_prompt = mock_ai.call_args.args[0]
+
+        self.assertIn(
+            '"tool": "check_internet"',
+            summary_prompt,
+        )
+
+        self.assertIn(
+            '"success": true',
+            summary_prompt,
+        )
+
+        self.assertIn(
+            '"data"',
+            summary_prompt,
         )
 
     @patch("agent.ask_local_ai")

@@ -1122,6 +1122,7 @@ def execute_result_aware_task(message):
     # - executed and failed
     # - blocked because an earlier step failed
     results = []
+    execution_results = {}
     failed_steps = set()
 
     for step_number, task in enumerate(tasks, start=1):
@@ -1231,6 +1232,7 @@ def execute_result_aware_task(message):
             result, verification = execute_website_with_verification(
                 normalized_arguments
             )
+            execution_results[step_number] = result
 
             succeeded = tool_result_succeeded(
                 tool_name,
@@ -1277,6 +1279,7 @@ def execute_result_aware_task(message):
                 tool_name,
                 **normalized_arguments
             )
+            execution_results[step_number] = result
 
             succeeded = tool_result_succeeded(
                 tool_name,
@@ -1327,6 +1330,8 @@ def execute_result_aware_task(message):
         f"User request: {message}\n\n"
         "Actual execution history:\n"
         + "\n".join(results)
+        + "\n\nStructured execution results:\n"
+        + result_to_json(execution_results)
     )
 
     try:
