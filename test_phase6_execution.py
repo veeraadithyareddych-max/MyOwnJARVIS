@@ -393,76 +393,154 @@ class Phase6ExecutionTests(unittest.TestCase):
                 }
             ],
         )
-        
+
+
+    def test_validate_ai_plan_accepts_valid_dependency(self):
+        """A task may explicitly depend on an earlier step."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                    },
+                    {
+                        "tool": "get_weather",
+                        "arguments": {
+                            "city": "Mumbai",
+                        },
+                        "depends_on": [1],
+                    },
+                ]
+            },
+            "Check my internet connection and then get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(
+            tasks[1]["depends_on"],
+            [1],
+        )
+
+    def test_validate_ai_plan_rejects_invalid_dependency_type(self):
+        """Dependencies must be provided as a list."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                    },
+                    {
+                        "tool": "get_weather",
+                        "arguments": {
+                            "city": "Mumbai",
+                        },
+                        "depends_on": 1,
+                    },
+                ]
+            },
+            "Check my internet connection and then get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "depends_on",
+            error,
+        )
+
+    def test_validate_ai_plan_rejects_self_dependency(self):
+        """A task must not depend on itself."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                        "depends_on": [1],
+                    }
+                ]
+            },
+            "Check my internet connection.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "cannot depend on itself",
+            error,
+        )
+
+    def test_validate_ai_plan_rejects_nonexistent_dependency(self):
+        """A task must not depend on a nonexistent step."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                    },
+                    {
+                        "tool": "get_weather",
+                        "arguments": {
+                            "city": "Mumbai",
+                        },
+                        "depends_on": [5],
+                    },
+                ]
+            },
+            "Check my internet connection and then get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "does not exist",
+            error,
+        )
+
+    def test_validate_ai_plan_rejects_later_dependency(self):
+        """A task must not depend on a step that comes after it."""
+
+        tasks, error = agent.validate_ai_plan(
+            {
+                "tasks": [
+                    {
+                        "tool": "check_internet",
+                        "arguments": {},
+                        "depends_on": [2],
+                    },
+                    {
+                        "tool": "get_weather",
+                        "arguments": {
+                            "city": "Mumbai",
+                        },
+                    },
+                ]
+            },
+            "Check my internet connection and then get the weather in Mumbai.",
+        )
+
+        self.assertIsNone(tasks)
+        self.assertIn(
+            "later step",
+            error,
+        )
     @patch("agent.ask_local_ai", return_value="Summary")
     @patch("agent.execute_tool")
-    @patch(
-        "agent.ask_local_ai_for_plan",
-        return_value={
-            "tasks": [
-                {
-                    "tool": "check_internet",
-                    "arguments": {},
-                },
-                {
-                    "tool": "get_weather",
-                    "arguments": {"city": "Mumbai"},
-                },
-            ]
-        },
-    )
-    def test_result_aware_task_records_failed_step_and_blocks_following_steps(
-        self,
-        mock_plan,
-        mock_execute,
-        mock_ai,
-    ):
-        """
-        A failed step must block later steps and preserve execution history.
-
-        The failed step must remain in the result history, and every
-        dependent step that was not executed must also be explicitly
-        recorded as blocked.
-        """
-
-        mock_execute.return_value = self.failure_result(
-            "check_internet"
-        )
-
-        result = agent.execute_result_aware_task(
-            "Check my internet connection and then get the weather in Mumbai."
-        )
-
-        # Failed Step 1 must be preserved.
+    @patch("agent.ask_local_ai_for_plan", return_value={"tasks": [{"tool": "check_internet", "arguments": {}}, {"tool": "get_weather", "arguments": {"city": "Mumbai"}, "depends_on": [1]}]})
+    def test_result_aware_task_records_failed_step_and_blocks_following_steps(self, mock_plan, mock_execute, mock_ai):
+        """A failed step must block later steps and preserve execution history."""
+        mock_execute.return_value = self.failure_result("check_internet")
+        result = agent.execute_result_aware_task("Check my internet connection and then get the weather in Mumbai.")
         self.assertIn("check_internet", result)
-
-        # The executor must explicitly record why Step 2 was not executed.
-        self.assertIn(
-            "Execution stopped because the tool failed.",
-            result,
-        )
-
-        self.assertIn(
-            "Step 2: get_weather blocked because Step 1 failed",
-            result,
-        )
-
-        # Only Step 1 is actually executed.
-        executed_tools = [
-            call.args[0]
-            for call in mock_execute.call_args_list
-        ]
-
-        self.assertEqual(
-            executed_tools,
-            ["check_internet"],
-        )
-
-        # Step 2 must not appear as an executed tool result.
-        self.assertNotIn(
-            "get_weather: ",
-            result,
-        )
+        self.assertIn("Execution continued because independent tasks may still run.", result)
+        self.assertIn("Step 2: get_weather blocked because Step 1 failed", result)
+        executed_tools = [call.args[0] for call in mock_execute.call_args_list]
+        self.assertEqual(executed_tools, ["check_internet"])
+        self.assertEqual(result.splitlines()[-1], "Summary")
 
     @patch("agent.format_tool_result")
     @patch("agent.ask_local_ai_for_next_action")
@@ -510,6 +588,154 @@ class Phase6ExecutionTests(unittest.TestCase):
         self.assertEqual(
             executed_tools,
             ["check_internet", "get_weather"],
+        )
+    @patch("agent.ask_local_ai")
+    @patch("agent.execute_tool")
+    @patch("agent.ask_local_ai_for_plan")
+    def test_result_aware_task_respects_declared_dependencies(
+        self,
+        mock_plan,
+        mock_execute,
+        mock_ai,
+    ):
+        """Declared dependencies must be preserved in the execution plan."""
+
+        mock_plan.return_value = {
+            "tasks": [
+                {
+                    "tool": "check_internet",
+                    "arguments": {},
+                },
+                {
+                    "tool": "get_weather",
+                    "arguments": {"city": "Mumbai"},
+                    "depends_on": [1],
+                },
+            ]
+        }
+
+        mock_execute.side_effect = [
+            self.success_result("check_internet"),
+            self.success_result("get_weather"),
+        ]
+
+        result = agent.execute_result_aware_task(
+            "Check my internet connection and then get the weather in Mumbai."
+        )
+
+        executed_tools = [
+            call.args[0]
+            for call in mock_execute.call_args_list
+        ]
+
+        self.assertEqual(
+            executed_tools,
+            ["check_internet", "get_weather"],
+        )
+
+        self.assertIn(
+            "get_weather",
+            result,
+        )
+    @patch("agent.ask_local_ai")
+    @patch("agent.execute_tool")
+    @patch("agent.ask_local_ai_for_plan")
+    def test_result_aware_task_blocks_step_when_dependency_fails(
+        self,
+        mock_plan,
+        mock_execute,
+        mock_ai,
+    ):
+        """A task must be blocked when its declared dependency fails."""
+
+        mock_plan.return_value = {
+            "tasks": [
+                {
+                    "tool": "check_internet",
+                    "arguments": {},
+                },
+                {
+                    "tool": "get_weather",
+                    "arguments": {"city": "Mumbai"},
+                    "depends_on": [1],
+                },
+            ]
+        }
+
+        mock_execute.return_value = self.failure_result(
+            "check_internet"
+        )
+
+        result = agent.execute_result_aware_task(
+            "Check my internet connection and then get the weather in Mumbai."
+        )
+
+        executed_tools = [
+            call.args[0]
+            for call in mock_execute.call_args_list
+        ]
+
+        self.assertEqual(
+            executed_tools,
+            ["check_internet"],
+        )
+
+        self.assertIn(
+            "Step 2: get_weather blocked because Step 1 failed",
+            result,
+        )
+    @patch("agent.ask_local_ai")
+    @patch("agent.execute_tool")
+    @patch("agent.ask_local_ai_for_plan")
+    def test_result_aware_task_allows_independent_step_after_dependency_failure(
+        self,
+        mock_plan,
+        mock_execute,
+        mock_ai,
+    ):
+        """An independent task may execute after another dependency fails."""
+
+        mock_plan.return_value = {
+            "tasks": [
+                {
+                    "tool": "check_internet",
+                    "arguments": {},
+                },
+                {
+                    "tool": "get_weather",
+                    "arguments": {"city": "Mumbai"},
+                    "depends_on": [1],
+                },
+                {
+                    "tool": "get_weather",
+                    "arguments": {"city": "Delhi"},
+                },
+            ]
+        }
+
+        mock_execute.side_effect = [
+            self.failure_result("check_internet"),
+            self.success_result("get_weather"),
+        ]
+
+        result = agent.execute_result_aware_task(
+            "Check internet, then get Mumbai weather, "
+            "and also get Delhi weather."
+        )
+
+        executed_tools = [
+            call.args[0]
+            for call in mock_execute.call_args_list
+        ]
+
+        self.assertEqual(
+            executed_tools,
+            ["check_internet", "get_weather"],
+        )
+
+        self.assertIn(
+            "Step 2: get_weather blocked because Step 1 failed",
+            result,
         )
 
     @patch("agent.format_tool_result")

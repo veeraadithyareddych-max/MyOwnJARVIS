@@ -1,4 +1,4 @@
-
+﻿
 # ============================================================
 # MyOwnJARVIS - Agent Tool Registry and Task Planner
 # Structured Tool Results + AI Recovery + Memory
@@ -517,12 +517,67 @@ def validate_ai_plan(plan_data, user_request):
                 "Application action blocked because it was not requested."
             )
 
-        normalized_tasks.append(
-            {
+        dependency_data = task.get("depends_on")
+
+        if dependency_data is not None:
+
+            if not isinstance(dependency_data, list):
+                return None, (
+                    f"Step {step_number}: "
+                    "depends_on must be a list."
+                )
+
+            if len(dependency_data) != len(set(dependency_data)):
+                return None, (
+                    f"Step {step_number}: "
+                    "depends_on contains duplicate dependencies."
+                )
+
+            for dependency in dependency_data:
+
+                if not isinstance(dependency, int):
+                    return None, (
+                        f"Step {step_number}: "
+                        "depends_on must contain step numbers."
+                    )
+
+                if dependency < 1:
+                    return None, (
+                        f"Step {step_number}: "
+                        "depends_on contains an invalid step number."
+                    )
+
+                if dependency == step_number:
+                    return None, (
+                        f"Step {step_number}: "
+                        "A task cannot depend on itself."
+                    )
+
+                if dependency >= step_number:
+                    if dependency > len(tasks):
+                        return None, (
+                            f"Step {step_number}: "
+                            f"Dependency step {dependency} does not exist."
+                        )
+
+                    return None, (
+                        f"Step {step_number}: "
+                        f"Dependency on later step {dependency} is not allowed."
+                    )
+
+            normalized_task = {
+                "tool": tool_name,
+                "arguments": normalized_arguments,
+                "depends_on": list(dependency_data),
+            }
+
+        else:
+            normalized_task = {
                 "tool": tool_name,
                 "arguments": normalized_arguments,
             }
-        )
+
+        normalized_tasks.append(normalized_task)
 
     return normalized_tasks, None
 
@@ -928,6 +983,23 @@ def record_blocked_steps(results, tasks, failed_step_number):
 # ============================================================
 
 
+def task_has_failed_dependency(task, failed_steps):
+    """Return True when a task depends on a failed step."""
+
+    if not isinstance(task, dict):
+        return False
+
+    dependencies = task.get("depends_on", [])
+
+    if not isinstance(dependencies, list):
+        return False
+
+    return any(
+        dependency in failed_steps
+        for dependency in dependencies
+    )
+
+
 def execute_result_aware_task(message):
     """Execute AI-planned tasks with verified results and execution history."""
 
@@ -963,9 +1035,7 @@ def execute_result_aware_task(message):
     # - executed and failed
     # - blocked because an earlier step failed
     results = []
-
-    execution_failed = False
-    failed_step_number = None
+    failed_steps = set()
 
     for step_number, task in enumerate(tasks, start=1):
 
@@ -973,15 +1043,23 @@ def execute_result_aware_task(message):
         # If an earlier step failed, do not execute dependent steps.
         # Record them explicitly as blocked instead.
         # ------------------------------------------------------------
-        if execution_failed:
+        if task_has_failed_dependency(task, failed_steps):
             blocked_tool = "unknown"
 
             if isinstance(task, dict):
                 blocked_tool = task.get("tool", "unknown")
 
+            dependencies = task.get("depends_on", [])
+
+            failed_dependency = next(
+                dependency
+                for dependency in dependencies
+                if dependency in failed_steps
+            )
+
             results.append(
                 f"Step {step_number}: {blocked_tool} blocked because "
-                f"Step {failed_step_number} failed"
+                f"Step {failed_dependency} failed"
             )
 
             continue
@@ -991,17 +1069,8 @@ def execute_result_aware_task(message):
                 f"Step {step_number}: Invalid task."
             )
 
-            execution_failed = True
-            failed_step_number = step_number
-
-            # Record that all remaining tasks are blocked.
-            record_blocked_steps(
-    results,
-    tasks,
-    step_number,
-)
-
-            break
+            failed_steps.add(step_number)
+            continue
 
         tool_name = task.get("tool")
         arguments = task.get("arguments", {})
@@ -1016,18 +1085,8 @@ def execute_result_aware_task(message):
                 f"Step {step_number}: {error}"
             )
 
-            execution_failed = True
-            failed_step_number = step_number
-
-            # Preserve execution history for all tasks that were
-            # planned but could not safely execute.
-            record_blocked_steps(
-    results,
-    tasks,
-    step_number,
-)
-
-            break
+            failed_steps.add(step_number)
+            continue
 
         if (
             tool_name == "open_website"
@@ -1041,16 +1100,8 @@ def execute_result_aware_task(message):
                 "it was not requested."
             )
 
-            execution_failed = True
-            failed_step_number = step_number
-
-            record_blocked_steps(
-    results,
-    tasks,
-    step_number,
-)
-
-            break
+            failed_steps.add(step_number)
+            continue
 
         if (
             tool_name == "open_application"
@@ -1064,16 +1115,8 @@ def execute_result_aware_task(message):
                 "it was not requested."
             )
 
-            execution_failed = True
-            failed_step_number = step_number
-
-            record_blocked_steps(
-    results,
-    tasks,
-    step_number,
-)
-
-            break
+            failed_steps.add(step_number)
+            continue
 
         print(f"Agent step {step_number}: {tool_name}")
 
@@ -1147,31 +1190,22 @@ def execute_result_aware_task(message):
         # Failure handling
         # ------------------------------------------------------------
         if not succeeded:
-            execution_failed = True
-            failed_step_number = step_number
+            failed_steps.add(step_number)
 
             print(
                 f"Agent observation: {tool_name} failed."
             )
 
             print(
-                "Agent decision: Stop remaining tasks."
+                "Agent decision: Continue with independent tasks."
             )
 
-            # Explicitly preserve the execution history.
+            # Preserve the failed step in execution history.
             results.append(
-                "Execution stopped because the tool failed."
+                "Execution continued because independent tasks may still run."
             )
 
-            # Record every remaining planned task as blocked.
-            record_blocked_steps(
-                results,
-                tasks,
-                step_number,
-            )
-
-
-            break
+            continue
 
         # ------------------------------------------------------------
         # Special handling for internet prerequisite
