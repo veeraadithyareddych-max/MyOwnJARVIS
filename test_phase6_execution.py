@@ -423,6 +423,66 @@ class Phase6ExecutionTests(unittest.TestCase):
             [1],
         )
 
+    def test_validate_ai_plan_rejects_missing_tasks_field(self):
+        """A plan must contain a tasks field."""
+        tasks, error = agent.validate_ai_plan({}, "Check my internet connection.")
+        self.assertIsNone(tasks)
+        self.assertIn("invalid task list", error)
+
+    def test_validate_ai_plan_rejects_non_list_tasks_field(self):
+        """The tasks field must be a list."""
+        tasks, error = agent.validate_ai_plan({"tasks": {}}, "Check my internet connection.")
+        self.assertIsNone(tasks)
+        self.assertIn("invalid task list", error)
+
+    def test_validate_ai_plan_rejects_null_task(self):
+        """A task entry must be a dictionary."""
+        tasks, error = agent.validate_ai_plan({"tasks": [None]}, "Check my internet connection.")
+        self.assertIsNone(tasks)
+        self.assertIn("invalid task", error)
+
+    def test_validate_ai_plan_rejects_blank_tool_name(self):
+        """A task must specify a non-blank tool name."""
+        tasks, error = agent.validate_ai_plan(
+            {"tasks": [{"tool": "   ", "arguments": {}}]},
+            "Check my internet connection.",
+        )
+        self.assertIsNone(tasks)
+        self.assertIn("valid tool", error)
+
+    def test_validate_ai_plan_rejects_non_string_tool_name(self):
+        """A task tool name must be a string."""
+        tasks, error = agent.validate_ai_plan(
+            {"tasks": [{"tool": 123, "arguments": {}}]},
+            "Check my internet connection.",
+        )
+        self.assertIsNone(tasks)
+        self.assertIn("valid tool", error)
+
+    def test_validate_ai_plan_rejects_null_arguments(self):
+        """Task arguments must not be null."""
+        tasks, error = agent.validate_ai_plan(
+            {"tasks": [{"tool": "check_internet", "arguments": None}]},
+            "Check my internet connection.",
+        )
+        self.assertIsNone(tasks)
+        self.assertIn("arguments", error)
+
+    def test_validate_ai_plan_rejects_non_dictionary_arguments(self):
+        """Task arguments must be a dictionary."""
+        tasks, error = agent.validate_ai_plan(
+            {"tasks": [{"tool": "check_internet", "arguments": []}]},
+            "Check my internet connection.",
+        )
+        self.assertIsNone(tasks)
+        self.assertIn("arguments", error)
+
+    def test_validate_ai_plan_rejects_list_plan(self):
+        """The complete AI plan must be a dictionary."""
+        tasks, error = agent.validate_ai_plan([], "Check my internet connection.")
+        self.assertIsNone(tasks)
+        self.assertIn("invalid plan", error)
+
     def test_validate_ai_plan_accepts_empty_dependency_list(self):
         """An empty dependency list is valid."""
 
@@ -538,7 +598,7 @@ class Phase6ExecutionTests(unittest.TestCase):
 
         self.assertIsNone(tasks)
         self.assertIn(
-            "cannot depend on itself",
+            "A task cannot depend on itself.",
             error,
         )
 
