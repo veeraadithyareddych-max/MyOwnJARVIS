@@ -998,7 +998,55 @@ def task_has_failed_dependency(task, failed_steps):
         dependency in failed_steps
         for dependency in dependencies
     )
+def validate_requested_action(tool_name, arguments, message):
+    """Validate that AI-selected arguments match the user's request."""
 
+    request_lower = message.lower()
+
+    if tool_name == "get_weather" and "weather" in request_lower:
+        if " in " in request_lower:
+            requested_city = (
+    message.rsplit(" in ", 1)[1]
+    .strip()
+    .rstrip(".!?")
+)
+
+            selected_city = arguments.get("city", "").strip()
+
+            if requested_city.casefold() != selected_city.casefold():
+                return (
+                    f"You requested weather for {requested_city}, "
+                    f"but the AI selected {selected_city}."
+                )
+
+    if tool_name == "open_application":
+        requested_application = None
+
+        for app_name in ALLOWED_APPLICATIONS:
+            if re.search(
+                r"\b(?:open|launch|start|run)\s+"
+                + re.escape(app_name)
+                + r"\b",
+                request_lower,
+            ):
+                requested_application = app_name
+                break
+
+        if requested_application is not None:
+            selected_application = (
+                arguments.get("app_name", "").strip()
+            )
+
+            if (
+                selected_application.casefold()
+                != requested_application.casefold()
+            ):
+                return (
+                    f"You requested {requested_application}, "
+                    f"but the AI selected {selected_application}."
+                )
+
+    return None
 
 def execute_result_aware_task(message):
     """Execute AI-planned tasks with verified results and execution history."""
@@ -1085,6 +1133,19 @@ def execute_result_aware_task(message):
         if error:
             results.append(
                 f"Step {step_number}: {error}"
+            )
+
+            failed_steps.add(step_number)
+            continue
+        semantic_error = validate_requested_action(
+            tool_name,
+            normalized_arguments,
+            message,
+        )
+
+        if semantic_error:
+            results.append(
+                f"Step {step_number}: {semantic_error}"
             )
 
             failed_steps.add(step_number)

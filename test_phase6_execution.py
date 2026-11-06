@@ -1034,6 +1034,48 @@ class Phase6ExecutionTests(unittest.TestCase):
             "Step 2: get_weather blocked because Step 1 failed",
             result,
         )
+    @patch("agent.ask_local_ai")
+    @patch("agent.execute_tool")
+    @patch("agent.ask_local_ai_for_plan")
+    def test_result_aware_task_rejects_wrong_weather_city(
+        self,
+        mock_plan,
+        mock_execute,
+        mock_ai,
+    ):
+        """A successful weather result for the wrong city must not satisfy the request."""
+
+        mock_plan.return_value = {
+            "tasks": [
+                {
+                    "tool": "get_weather",
+                    "arguments": {"city": "Delhi"},
+                },
+            ]
+        }
+
+        mock_execute.return_value = self.success_result(
+            "get_weather"
+        )
+
+        result = agent.execute_result_aware_task(
+            "Get the weather in Mumbai."
+        )
+
+        executed_tools = [
+            call.args[0]
+            for call in mock_execute.call_args_list
+        ]
+
+        self.assertEqual(
+            executed_tools,
+            [],
+        )
+
+        self.assertIn(
+            "You requested weather for Mumbai, but the AI selected Delhi.",
+            result,
+        )
 
     @patch("agent.format_tool_result")
     @patch("agent.execute_with_ai_recovery")
