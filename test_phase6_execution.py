@@ -693,6 +693,7 @@ class Phase6ExecutionTests(unittest.TestCase):
             "get_weather",
             result,
         )
+
     @patch("agent.ask_local_ai")
     @patch("agent.execute_tool")
     @patch("agent.ask_local_ai_for_plan")
@@ -740,6 +741,60 @@ class Phase6ExecutionTests(unittest.TestCase):
             "Step 2: get_weather blocked because Step 1 failed",
             result,
         )
+    @patch("agent.ask_local_ai")
+    @patch("agent.execute_tool")
+    @patch("agent.ask_local_ai_for_plan")
+    def test_result_aware_task_blocks_when_any_dependency_fails(
+        self,
+        mock_plan,
+        mock_execute,
+        mock_ai,
+    ):
+        """A task must be blocked when any declared dependency fails."""
+
+        mock_plan.return_value = {
+            "tasks": [
+                {
+                    "tool": "check_internet",
+                    "arguments": {},
+                },
+                {
+                    "tool": "get_weather",
+                    "arguments": {"city": "Mumbai"},
+                },
+                {
+                    "tool": "get_weather",
+                    "arguments": {"city": "Delhi"},
+                    "depends_on": [1, 2],
+                },
+            ]
+        }
+
+        mock_execute.side_effect = [
+            self.failure_result("check_internet"),
+            self.success_result("get_weather"),
+        ]
+
+        result = agent.execute_result_aware_task(
+            "Check internet, get Mumbai weather, and then get Delhi weather."
+        )
+
+        executed_tools = [
+            call.args[0]
+            for call in mock_execute.call_args_list
+        ]
+
+        self.assertEqual(
+            executed_tools,
+            ["check_internet", "get_weather"],
+        )
+
+        self.assertIn(
+            "Step 3: get_weather blocked because Step 1 failed",
+            result,
+        )
+
+
     @patch("agent.ask_local_ai")
     @patch("agent.execute_tool")
     @patch("agent.ask_local_ai_for_plan")
