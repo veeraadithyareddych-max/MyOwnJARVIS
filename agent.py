@@ -1062,6 +1062,8 @@ def execute_result_aware_task(message):
                 f"Step {failed_dependency} failed"
             )
 
+            failed_steps.add(step_number)
+
             continue
 
         if not isinstance(task, dict):
