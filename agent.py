@@ -1017,10 +1017,10 @@ def validate_requested_action(tool_name, arguments, message):
     if tool_name == "get_weather" and "weather" in request_lower:
         if " in " in request_lower:
             requested_city = (
-    message.rsplit(" in ", 1)[1]
-    .strip()
-    .rstrip(".!?")
-)
+                message.rsplit(" in ", 1)[1]
+                .strip()
+                .rstrip(".!?")
+            )
 
             selected_city = arguments.get("city", "").strip()
 
@@ -1028,6 +1028,33 @@ def validate_requested_action(tool_name, arguments, message):
                 return (
                     f"You requested weather for {requested_city}, "
                     f"but the AI selected {selected_city}."
+                )
+
+    if tool_name == "open_website":
+        requested_website = None
+
+        for site_name in ALLOWED_WEBSITES:
+            if re.search(
+                r"\b(?:open|visit|go to)\s+"
+                + re.escape(site_name)
+                + r"\b",
+                request_lower,
+            ):
+                requested_website = site_name
+                break
+
+        if requested_website is not None:
+            selected_website = (
+                arguments.get("site_name", "").strip()
+            )
+
+            if (
+                selected_website.casefold()
+                != requested_website.casefold()
+            ):
+                return (
+                    f"You requested {requested_website.title()}, "
+                    f"but the AI selected {selected_website}."
                 )
 
     if tool_name == "open_application":
@@ -1052,7 +1079,7 @@ def validate_requested_action(tool_name, arguments, message):
                 selected_application.casefold()
                 != requested_application.casefold()
             ):
-              return (
+                return (
                     "Application action blocked. "
                     f"You requested {requested_application}, "
                     f"but the AI selected {selected_application}."

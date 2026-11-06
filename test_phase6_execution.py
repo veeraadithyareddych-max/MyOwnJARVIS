@@ -1061,6 +1061,34 @@ class Phase6ExecutionTests(unittest.TestCase):
             "You requested weather for Mumbai, but the AI selected Delhi.",
             error,
         )
+
+    @patch("agent.ask_local_ai_for_plan")
+    def test_validate_ai_plan_rejects_wrong_website(
+        self,
+        mock_plan,
+    ):
+        """AI plan validation must reject an unrequested website."""
+
+        mock_plan.return_value = {
+            "tasks": [
+                {
+                    "tool": "open_website",
+                    "arguments": {"site_name": "github"},
+                },
+            ]
+        }
+
+        tasks, error = agent.validate_ai_plan(
+            mock_plan.return_value,
+            "Open Google.",
+        )
+
+        self.assertIsNone(tasks)
+
+        self.assertIn(
+            "You requested Google, but the AI selected github.",
+            error,
+        )
     @patch("agent.ask_local_ai")
     @patch("agent.execute_tool")
     @patch("agent.ask_local_ai_for_plan")
