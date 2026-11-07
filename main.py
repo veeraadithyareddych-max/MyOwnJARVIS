@@ -827,6 +827,7 @@ def resolve_conversational_reference(user_message):
             "there",
             "tomorrow",
             "today",
+            "next day",
         )
     ):
         return message
@@ -915,7 +916,7 @@ def resolve_conversational_reference(user_message):
 
         if (
             re.search(
-                r"\b(?:today|tomorrow)\b",
+                r"\b(?:today|tomorrow|next day)\b",
                 message,
                 flags=re.IGNORECASE,
             )
