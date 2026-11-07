@@ -826,6 +826,7 @@ def resolve_conversational_reference(user_message):
             "the city",
             "there",
             "tomorrow",
+            "today",
         )
     ):
         return message
@@ -913,7 +914,11 @@ def resolve_conversational_reference(user_message):
         )
 
         if (
-            re.search(r"\btomorrow\b", message, flags=re.IGNORECASE)
+            re.search(
+                r"\b(?:today|tomorrow)\b",
+                message,
+                flags=re.IGNORECASE,
+            )
             and display_name.lower() not in message.lower()
         ):
             if resolved_message.endswith(("?", "!", ".")):
