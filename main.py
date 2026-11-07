@@ -825,6 +825,7 @@ def resolve_conversational_reference(user_message):
             "the weather",
             "the city",
             "there",
+            "tomorrow",
         )
     ):
         return message
@@ -910,6 +911,18 @@ def resolve_conversational_reference(user_message):
             resolved_message,
             flags=re.IGNORECASE,
         )
+
+        if (
+            re.search(r"\btomorrow\b", message, flags=re.IGNORECASE)
+            and display_name.lower() not in message.lower()
+        ):
+            if resolved_message.endswith(("?", "!", ".")):
+                resolved_message = (
+                    f"{resolved_message[:-1].rstrip()} "
+                    f"in {display_name}{resolved_message[-1]}"
+                )
+            else:
+                resolved_message = f"{resolved_message} in {display_name}"
 
     resolved_message = re.sub(
         r"\bit\b",
