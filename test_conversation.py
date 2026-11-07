@@ -126,6 +126,25 @@ class ConversationContextTests(unittest.TestCase):
             "Open YouTube again.",
         )
 
+    def test_resolve_the_site_uses_last_successful_action(self):
+        """'the site' should resolve to the last successful website action."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "open_website",
+            "arguments": {
+                "site_name": "youtube",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "Open the site again."
+        )
+
+        self.assertEqual(
+            resolved,
+            "Open YouTube again.",
+        )
+
     def test_resolve_does_not_replace_it_inside_other_words(self):
         """Only the standalone word 'it' should be replaced."""
 
@@ -317,6 +336,25 @@ class ConversationContextTests(unittest.TestCase):
         self.assertEqual(
             resolved,
             "Open Notepad again.",
+        )
+
+    def test_resolve_that_site_uses_last_successful_action(self):
+        """'that site' should resolve to the last successful website action."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "open_website",
+            "arguments": {
+                "site_name": "youtube",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "Open that site again."
+        )
+
+        self.assertEqual(
+            resolved,
+            "Open YouTube again.",
         )
 
 
