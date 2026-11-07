@@ -911,7 +911,7 @@ def resolve_conversational_reference(user_message):
     )
     return re.sub(
         r"\bthat(?:\s+site)?\b",
-        display_name,
+        reference_name,
         resolved_message,
         flags=re.IGNORECASE,
     )
