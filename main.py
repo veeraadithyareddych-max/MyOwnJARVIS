@@ -830,9 +830,9 @@ def resolve_conversational_reference(user_message):
         return message
 
     if tool_name == "open_website":
-        site_name = arguments.get("site_name")
+        target_name = arguments.get("site_name")
 
-        if not isinstance(site_name, str) or not site_name.strip():
+        if not isinstance(target_name, str) or not target_name.strip():
             return message
 
         display_names = {
@@ -842,8 +842,8 @@ def resolve_conversational_reference(user_message):
         }
 
         display_name = display_names.get(
-            site_name.strip().lower(),
-            site_name.strip(),
+            target_name.strip().lower(),
+            target_name.strip(),
         )
 
         resolved_message = re.sub(
@@ -853,21 +853,36 @@ def resolve_conversational_reference(user_message):
             flags=re.IGNORECASE,
         )
 
+    elif tool_name == "open_application":
+        target_name = arguments.get("app_name")
+
+        if not isinstance(target_name, str) or not target_name.strip():
+            return message
+
+        display_name = target_name.strip().title()
+
         resolved_message = re.sub(
-            r"\bit\b",
+            r"\bthe application\b",
             display_name,
-            resolved_message,
+            message,
             flags=re.IGNORECASE,
         )
+    else:
+        return message
 
-        return re.sub(
-            r"\bthat\b",
-            display_name,
-            resolved_message,
-            flags=re.IGNORECASE,
-        )
+    resolved_message = re.sub(
+        r"\bit\b",
+        display_name,
+        resolved_message,
+        flags=re.IGNORECASE,
+    )
 
-    return message
+    return re.sub(
+        r"\bthat\b",
+        display_name,
+        resolved_message,
+        flags=re.IGNORECASE,
+    )
 
 def record_successful_action(tool_name, arguments, result):
     """Remember an executable action only when the tool reports success."""

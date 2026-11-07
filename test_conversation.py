@@ -88,6 +88,25 @@ class ConversationContextTests(unittest.TestCase):
             "Open YouTube again.",
         )
 
+    def test_resolve_it_uses_last_successful_application_action(self):
+        """The word 'it' should resolve to the last successful application action."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "open_application",
+            "arguments": {
+                "app_name": "notepad",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "Open it again."
+        )
+
+        self.assertEqual(
+            resolved,
+            "Open Notepad again.",
+        )
+
     def test_resolve_the_website_uses_last_successful_action(self):
         """'the website' should resolve to the last successful website action."""
 
