@@ -68,6 +68,45 @@ class ConversationContextTests(unittest.TestCase):
             resolved,
             "Open YouTube again.",
         )
+
+    def test_resolve_that_uses_last_successful_action(self):
+        """The word 'that' should resolve to the last successful website action."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "open_website",
+            "arguments": {
+                "site_name": "youtube",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "Open that again."
+        )
+
+        self.assertEqual(
+            resolved,
+            "Open YouTube again.",
+        )
+
+    def test_resolve_the_website_uses_last_successful_action(self):
+        """'the website' should resolve to the last successful website action."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "open_website",
+            "arguments": {
+                "site_name": "youtube",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "Open the website again."
+        )
+
+        self.assertEqual(
+            resolved,
+            "Open YouTube again.",
+        )
+
     def test_resolve_does_not_replace_it_inside_other_words(self):
         """Only the standalone word 'it' should be replaced."""
 
