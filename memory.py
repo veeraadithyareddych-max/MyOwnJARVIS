@@ -282,6 +282,126 @@ def save_memory(information):
     finally:
         connection.close()
 
+def update_memory(memory_id, new_information):
+    """
+    Update an existing personal memory.
+
+    The memory ID remains unchanged. Duplicate information is rejected,
+    and the memory category is recalculated after the update.
+
+    Returns True if updated, False if the memory does not exist.
+    """
+    if not isinstance(memory_id, int):
+        raise TypeError("Memory ID must be an integer.")
+
+    if not isinstance(new_information, str):
+        raise TypeError("Memory information must be a string.")
+
+    new_information = new_information.strip()
+
+    if not new_information:
+        raise ValueError("Memory information cannot be empty.")
+
+    def normalize(text):
+        return " ".join(text.split()).casefold()
+
+    normalized_information = normalize(new_information)
+
+    initialize_memory()
+    connection = sqlite3.connect(DATABASE_NAME)
+
+    try:
+        existing_memory = connection.execute(
+            "SELECT information FROM memories WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+
+        if existing_memory is None:
+            return False
+
+        existing_memories = connection.execute(
+            """
+            SELECT id, information
+            FROM memories
+            WHERE id != ?
+            """,
+            (memory_id,),
+        ).fetchall()
+
+        for existing_id, existing_information in existing_memories:
+            if normalize(existing_information) == normalized_information:
+                return False
+
+        connection.execute(
+            """
+            UPDATE memories
+            SET information = ?
+            WHERE id = ?
+            """,
+            (new_information, memory_id),
+        )
+
+        category = detect_memory_category(new_information)
+
+        connection.execute(
+            """
+            UPDATE memory_categories
+            SET category = ?
+            WHERE memory_id = ?
+            """,
+            (category, memory_id),
+        )
+
+        connection.commit()
+        return True
+    finally:
+        connection.close()
+
+
+def forget_memory(memory_id):
+    """
+    Permanently remove an existing personal memory.
+
+    The associated memory category is removed first because SQLite
+    foreign-key enforcement is not enabled for current connections.
+
+    Returns True if the memory was removed, False if it does not exist.
+    """
+    if not isinstance(memory_id, int):
+        raise TypeError("Memory ID must be an integer.")
+
+    initialize_memory()
+    connection = sqlite3.connect(DATABASE_NAME)
+
+    try:
+        existing_memory = connection.execute(
+            "SELECT id FROM memories WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+
+        if existing_memory is None:
+            return False
+
+        connection.execute(
+            """
+            DELETE FROM memory_categories
+            WHERE memory_id = ?
+            """,
+            (memory_id,),
+        )
+
+        connection.execute(
+            """
+            DELETE FROM memories
+            WHERE id = ?
+            """,
+            (memory_id,),
+        )
+
+        connection.commit()
+        return True
+    finally:
+        connection.close()
 
 def get_memories():
     """Retrieve all saved personal information, oldest first."""

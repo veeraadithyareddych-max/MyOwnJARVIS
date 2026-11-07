@@ -24,6 +24,7 @@ from llm import (
 )
 
 from memory import (
+    get_relevant_memories,
     save_experience,
     get_relevant_experiences,
 )
@@ -1089,10 +1090,56 @@ def validate_requested_action(tool_name, arguments, message):
 
     return None
 
+def build_memory_context(message):
+    """Build a safe memory context for AI task planning."""
+
+    try:
+        memories = get_relevant_memories(
+            message,
+            limit=5,
+            min_score=0.12,
+        )
+    except (TypeError, ValueError, OSError):
+        return ""
+
+    if not isinstance(memories, list):
+        return ""
+
+    relevant_memories = []
+
+    for memory in memories:
+        if not isinstance(memory, dict):
+            continue
+
+        information = memory.get("information")
+
+        if not isinstance(information, str):
+            continue
+
+        information = information.strip()
+
+        if not information:
+            continue
+
+        relevant_memories.append(information)
+
+    if not relevant_memories:
+        return ""
+
+    return (
+        "\n\nRelevant remembered information:\n"
+        + "\n".join(
+            f"- {information}"
+            for information in relevant_memories
+        )
+        + "\n"
+    )
+
 def execute_result_aware_task(message):
     """Execute AI-planned tasks with verified results and execution history."""
 
-    plan_data = ask_local_ai_for_plan(message)
+    planning_message = message + build_memory_context(message)
+    plan_data = ask_local_ai_for_plan(planning_message)
 
     tasks, plan_error = validate_ai_plan(
         plan_data,
