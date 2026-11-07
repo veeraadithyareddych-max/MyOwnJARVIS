@@ -292,6 +292,25 @@ class ConversationContextTests(unittest.TestCase):
             "What about today in Chennai?",
         )
 
+    def test_resolve_explicit_weather_city_keeps_new_city(self):
+        """An explicitly named city should not be replaced by the previous city."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "get_weather",
+            "arguments": {
+                "city": "Chennai",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "What about the weather in Mumbai?"
+        )
+
+        self.assertEqual(
+            resolved,
+            "What about the weather in Mumbai?",
+        )
+
     def test_record_successful_action_stores_tool_and_arguments(self):
         """A successful tool result should become the last successful action."""
 

@@ -891,7 +891,7 @@ def resolve_conversational_reference(user_message):
         display_name = target_city.strip()
 
         resolved_message = re.sub(
-            r"\b(?:the weather|the city)\b",
+            r"\b(?:the weather|the city)\b(?!\s+in\b)",
             f"{display_name} weather",
             message,
             flags=re.IGNORECASE,
