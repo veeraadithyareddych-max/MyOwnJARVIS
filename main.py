@@ -814,7 +814,16 @@ def resolve_conversational_reference(user_message):
 
     lowered_message = message.lower()
 
-    if not any(reference in lowered_message for reference in ("it", "that", "the website", "the application", "the site")):
+    if not any(
+        reference in lowered_message
+        for reference in (
+            "it",
+            "that",
+            "the website",
+            "the application",
+            "the site",
+        )
+    ):
         return message
 
     if not isinstance(LAST_SUCCESSFUL_ACTION, dict):
@@ -867,16 +876,37 @@ def resolve_conversational_reference(user_message):
             message,
             flags=re.IGNORECASE,
         )
+
+    elif tool_name == "get_weather":
+        target_city = arguments.get("city")
+
+        if not isinstance(target_city, str) or not target_city.strip():
+            return message
+
+        display_name = target_city.strip()
+
+        resolved_message = re.sub(
+            r"\b(?:the weather|the city)\b",
+            f"{display_name} weather",
+            message,
+            flags=re.IGNORECASE,
+        )
+
     else:
         return message
 
+    reference_name = (
+        f"{display_name} weather"
+        if tool_name == "get_weather"
+        else display_name
+    )
+
     resolved_message = re.sub(
         r"\bit\b",
-        display_name,
+        reference_name,
         resolved_message,
         flags=re.IGNORECASE,
     )
-
     return re.sub(
         r"\bthat(?:\s+site)?\b",
         display_name,
