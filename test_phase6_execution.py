@@ -1,11 +1,36 @@
-﻿import unittest
+﻿import os
+import tempfile
+import unittest
 from unittest.mock import patch
 
 import agent
+import memory
 
 
 class Phase6ExecutionTests(unittest.TestCase):
     """Tests for safe, context-aware multi-step task execution."""
+
+    def setUp(self):
+        self.temp_directory = tempfile.TemporaryDirectory()
+
+        self.database_path = os.path.join(
+            self.temp_directory.name,
+            "test_memory.sqlite3",
+        )
+
+        self.database_patch = patch.object(
+            memory,
+            "DATABASE_NAME",
+            self.database_path,
+        )
+
+        self.database_patch.start()
+
+        memory.initialize_memory()
+
+    def tearDown(self):
+        self.database_patch.stop()
+        self.temp_directory.cleanup()
 
     def success_result(self, tool_name):
         return {
@@ -87,6 +112,47 @@ class Phase6ExecutionTests(unittest.TestCase):
                 "Open example.com.",
                 {"site_name": "example.com"},
             )
+        )
+
+    @patch("agent.ask_local_ai_for_plan")
+    def test_real_memory_is_retrieved_and_injected_into_planner(
+        self,
+        mock_plan,
+    ):
+        """Saved memory should flow through retrieval into AI planning."""
+
+        memory.save_memory(
+            "User prefers internet connection checks."
+        )
+
+        mock_plan.return_value = {
+            "tasks": [
+                {
+                    "tool": "check_internet",
+                    "arguments": {},
+                },
+            ]
+        }
+
+        agent.execute_result_aware_task(
+            "Check my internet connection."
+        )
+
+        planning_message = mock_plan.call_args.args[0]
+
+        self.assertIn(
+            "Check my internet connection.",
+            planning_message,
+        )
+
+        self.assertIn(
+            "Relevant remembered information:",
+            planning_message,
+        )
+
+        self.assertIn(
+            "User prefers internet connection checks.",
+            planning_message,
         )
 
     @patch("agent.execute_with_recovery")
