@@ -824,6 +824,7 @@ def resolve_conversational_reference(user_message):
             "the site",
             "the weather",
             "the city",
+            "there",
         )
     ):
         return message
@@ -902,6 +903,13 @@ def resolve_conversational_reference(user_message):
         if tool_name == "get_weather"
         else display_name
     )
+    if tool_name == "get_weather":
+        resolved_message = re.sub(
+            r"\bthere\b",
+            f"in {display_name}",
+            resolved_message,
+            flags=re.IGNORECASE,
+        )
 
     resolved_message = re.sub(
         r"\bit\b",

@@ -235,6 +235,25 @@ class ConversationContextTests(unittest.TestCase):
             "Check Chennai weather again.",
         )
 
+    def test_resolve_there_uses_last_successful_weather_action(self):
+        """'there' should resolve to the city from the last weather action."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "get_weather",
+            "arguments": {
+                "city": "Chennai",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "What is the temperature there?"
+        )
+
+        self.assertEqual(
+            resolved,
+            "What is the temperature in Chennai?",
+        )
+
     def test_record_successful_action_stores_tool_and_arguments(self):
         """A successful tool result should become the last successful action."""
 
