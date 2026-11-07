@@ -829,6 +829,7 @@ def resolve_conversational_reference(user_message):
             "forecast",
             "humidity",
             "wind",
+            "pressure",
             "there",
             "tomorrow",
             "today",
@@ -921,7 +922,7 @@ def resolve_conversational_reference(user_message):
 
         if (
             re.search(
-                r"\b(?:today|tomorrow|next day|temperature|forecast|conditions|humidity|wind)\b",
+                r"\b(?:today|tomorrow|next day|temperature|forecast|conditions|humidity|wind|pressure)\b",
                 message,
                 flags=re.IGNORECASE,
             )
