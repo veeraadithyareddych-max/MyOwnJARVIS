@@ -814,7 +814,7 @@ def resolve_conversational_reference(user_message):
 
     lowered_message = message.lower()
 
-    if not any(reference in lowered_message for reference in ("it", "that", "the website")):
+    if not any(reference in lowered_message for reference in ("it", "that", "the website", "the application")):
         return message
 
     if not isinstance(LAST_SUCCESSFUL_ACTION, dict):

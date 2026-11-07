@@ -281,6 +281,44 @@ class ConversationContextTests(unittest.TestCase):
         self.assertIn("Tell me about Java inheritance.", submitted_prompt)
         self.assertIn("Explain that again.", submitted_prompt)
 
+    def test_resolve_that_uses_last_successful_application_action(self):
+        """The word 'that' should resolve to the last successful application action."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "open_application",
+            "arguments": {
+                "app_name": "notepad",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "Open that again."
+        )
+
+        self.assertEqual(
+            resolved,
+            "Open Notepad again.",
+        )
+
+    def test_resolve_the_application_uses_last_successful_action(self):
+        """'the application' should resolve to the last successful application action."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "open_application",
+            "arguments": {
+                "app_name": "notepad",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "Open the application again."
+        )
+
+        self.assertEqual(
+            resolved,
+            "Open Notepad again.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
