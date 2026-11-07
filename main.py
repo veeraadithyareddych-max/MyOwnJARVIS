@@ -822,6 +822,8 @@ def resolve_conversational_reference(user_message):
             "the website",
             "the application",
             "the site",
+            "the weather",
+            "the city",
         )
     ):
         return message
