@@ -824,6 +824,7 @@ def resolve_conversational_reference(user_message):
             "the site",
             "the weather",
             "the city",
+            "temperature",
             "there",
             "tomorrow",
             "today",
@@ -916,7 +917,12 @@ def resolve_conversational_reference(user_message):
 
         if (
             re.search(
-                r"\b(?:today|tomorrow|next day)\b",
+                r"\b(?:today|tomorrow|next day|temperature)\b",
+                message,
+                flags=re.IGNORECASE,
+            )
+            and not re.search(
+                r"\bthere\b",
                 message,
                 flags=re.IGNORECASE,
             )

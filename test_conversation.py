@@ -292,6 +292,25 @@ class ConversationContextTests(unittest.TestCase):
             "What about the next day in Chennai?",
         )
 
+    def test_resolve_temperature_uses_last_successful_weather_city(self):
+        """'temperature' should retain the city from the last weather action."""
+
+        main.LAST_SUCCESSFUL_ACTION = {
+            "tool": "get_weather",
+            "arguments": {
+                "city": "Chennai",
+            },
+        }
+
+        resolved = main.resolve_conversational_reference(
+            "What about the temperature?"
+        )
+
+        self.assertEqual(
+            resolved,
+            "What about the temperature in Chennai?",
+        )
+
     def test_resolve_today_uses_last_successful_weather_city(self):
         """'today' should retain the city from the last weather action."""
 
