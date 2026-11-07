@@ -1890,6 +1890,41 @@ class Phase6ExecutionTests(unittest.TestCase):
             "The user prefers Chennai.",
             validation_message,
         )
+    @patch("agent.get_relevant_memories")
+    @patch("agent.ask_local_ai_for_plan", return_value={"tasks": []})
+    def test_ai_agent_task_passes_relevant_memory_to_planner(
+        self,
+        mock_plan,
+        mock_memories,
+    ):
+        """AI agent planning should receive relevant memory context."""
+
+        mock_memories.return_value = [
+            {
+                "id": 1,
+                "information": "User prefers Chennai for weather.",
+                "score": 0.8,
+            }
+        ]
+
+        agent.execute_ai_agent_task(
+            "What is the weather?"
+        )
+
+        planning_message = mock_plan.call_args.args[0]
+
+        self.assertIn(
+            "What is the weather?",
+            planning_message,
+        )
+        self.assertIn(
+            "Relevant remembered information:",
+            planning_message,
+        )
+        self.assertIn(
+            "User prefers Chennai for weather.",
+            planning_message,
+        )
 
     @patch("agent.get_relevant_memories")
     @patch("agent.ask_local_ai")

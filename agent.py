@@ -894,7 +894,8 @@ def application_was_requested(user_request, arguments):
 def execute_ai_agent_task(message):
     """Ask the local AI to plan tasks, validate them, and execute them."""
 
-    plan_data = ask_local_ai_for_plan(message)
+    planning_message = message + build_memory_context(message)
+    plan_data = ask_local_ai_for_plan(planning_message)
 
     if not isinstance(plan_data, dict):
         return "The AI planner returned an invalid plan."
