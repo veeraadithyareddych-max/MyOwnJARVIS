@@ -14,12 +14,17 @@ class MainRoutingIntegrationTests(unittest.TestCase):
         self.original_history = (
             main.SESSION_CONVERSATION_HISTORY.copy()
         )
+        self.original_last_successful_action = (
+            main.LAST_SUCCESSFUL_ACTION
+        )
 
     def tearDown(self):
         main.SESSION_CONVERSATION_HISTORY[:] = (
             self.original_history
         )
-
+        main.LAST_SUCCESSFUL_ACTION = (
+            self.original_last_successful_action
+        )
     def run_main_with_input(self, inputs):
         """Run the real main loop with simulated user input."""
 
@@ -69,6 +74,44 @@ class MainRoutingIntegrationTests(unittest.TestCase):
 
         mock_executor.assert_called_once_with("Open Google")
         mock_response.assert_not_called()
+
+    def test_successful_website_execution_records_last_action(self):
+        """A successful website execution should remember the action."""
+
+        successful_result = {
+            "success": True,
+            "tool": "open_website",
+            "data": "YouTube opened",
+            "status": "accepted",
+        }
+
+        main.LAST_SUCCESSFUL_ACTION = None
+
+        with patch(
+            "agent.execute_tool",
+            return_value=successful_result,
+        ) as mock_tool:
+            result = main.execute_conditional_task("Open YouTube")
+
+        mock_tool.assert_called_once_with(
+            "open_website",
+            site_name="youtube",
+        )
+
+        self.assertIn(
+            "Action accepted",
+            result,
+        )
+
+        self.assertEqual(
+            main.LAST_SUCCESSFUL_ACTION,
+            {
+                "tool": "open_website",
+                "arguments": {
+                    "site_name": "youtube",
+                },
+            },
+        )
 
     def test_application_launch_phrases_use_conditional_executor(self):
         """Open, launch, start, and run requests should use the agent."""

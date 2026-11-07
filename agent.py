@@ -1,4 +1,4 @@
-﻿
+
 # ============================================================
 # MyOwnJARVIS - Agent Tool Registry and Task Planner
 # Structured Tool Results + AI Recovery + Memory
@@ -44,7 +44,23 @@ TOOL_REGISTRY = {
 ALLOWED_APPLICATIONS = {"notepad", "calculator", "paint"}
 ALLOWED_WEBSITES = {"google", "youtube", "github"}
 RETRYABLE_TOOLS = {"check_internet", "get_weather"}
+SUCCESSFUL_ACTION_CALLBACK = None
 
+def notify_successful_action(tool_name, arguments, result):
+    """Notify the caller about a successful executable action."""
+
+    if SUCCESSFUL_ACTION_CALLBACK is None:
+        return
+
+    try:
+        SUCCESSFUL_ACTION_CALLBACK(
+            tool_name,
+            arguments,
+            result,
+        )
+    except Exception:
+        # Conversation-state tracking must never break task execution.
+        return
 
 def list_available_tools():
     """Return the names of all available tools."""
@@ -1975,6 +1991,13 @@ def execute_conditional_task(message):
             "result": result,
             "attempts": attempts,
         })
+
+        if succeeded:
+            notify_successful_action(
+                tool_name,
+                arguments,
+                result,
+            )
 
         if not succeeded:
             print("Agent decision: Attempting AI-guided recovery.")

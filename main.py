@@ -18,6 +18,7 @@ from memory import (
     get_removed_likes,
 )
 from intent_model import predict_intent
+import agent
 from agent import (
     execute_tool,
     execute_ai_agent_task,
@@ -795,11 +796,90 @@ Answer:
 
 SESSION_CONVERSATION_HISTORY = []
 MAX_CONVERSATION_TURNS = 6
+LAST_SUCCESSFUL_ACTION = None
 
+def resolve_conversational_reference(user_message):
+    """Resolve simple follow-up references using the last successful action."""
+
+    if not isinstance(user_message, str):
+        return user_message
+
+    message = user_message.strip()
+
+    if not message:
+        return message
+
+    if LAST_SUCCESSFUL_ACTION is None:
+        return message
+
+    if "it" not in message.lower():
+        return message
+
+    if not isinstance(LAST_SUCCESSFUL_ACTION, dict):
+        return message
+
+    tool_name = LAST_SUCCESSFUL_ACTION.get("tool")
+    arguments = LAST_SUCCESSFUL_ACTION.get("arguments")
+
+    if not isinstance(tool_name, str):
+        return message
+
+    if not isinstance(arguments, dict):
+        return message
+
+    if tool_name == "open_website":
+        site_name = arguments.get("site_name")
+
+        if not isinstance(site_name, str) or not site_name.strip():
+            return message
+
+        display_names = {
+            "google": "Google",
+            "youtube": "YouTube",
+            "github": "GitHub",
+        }
+
+        display_name = display_names.get(
+            site_name.strip().lower(),
+            site_name.strip(),
+        )
+
+        return re.sub(
+            r"\bit\b",
+            display_name,
+            message,
+            flags=re.IGNORECASE,
+        )
+
+    return message
+
+def record_successful_action(tool_name, arguments, result):
+    """Remember an executable action only when the tool reports success."""
+
+    global LAST_SUCCESSFUL_ACTION
+
+    if not isinstance(tool_name, str):
+        return
+
+    if not isinstance(arguments, dict):
+        return
+
+    if not isinstance(result, dict):
+        return
+
+    if result.get("success") is not True:
+        return
+
+    LAST_SUCCESSFUL_ACTION = {
+        "tool": tool_name,
+        "arguments": dict(arguments),
+    }
+agent.SUCCESSFUL_ACTION_CALLBACK = record_successful_action
 
 # ---------------------------------------------------------
 # ANALYZE RECENT JAVA CODE
 # ---------------------------------------------------------
+
 
 def build_latest_java_code_facts():
     """
@@ -1909,6 +1989,9 @@ def main():
 
     while True:
         user_message = input("\nYou: ").strip()
+        resolved_user_message = resolve_conversational_reference(
+            user_message
+        )
 
         if not user_message:
             continue
@@ -1988,10 +2071,10 @@ def main():
                     break
 
             if requested_site:
-                response = execute_conditional_task(user_message)
+                response = execute_conditional_task(resolved_user_message)
 
                 if response is None:
-                    response = respond_to_user(user_message)
+                    response = respond_to_user(resolved_user_message)
             else:
                 response = (
                     "I can currently open Google, YouTube, and GitHub only. "
@@ -1999,12 +2082,12 @@ def main():
                 )
 
         elif requires_tool:
-            response = execute_conditional_task(user_message)
+            response = execute_conditional_task(resolved_user_message)
 
             if response is None:
-                response = respond_to_user(user_message)
+                response = respond_to_user(resolved_user_message)
         else:
-            response = respond_to_user(user_message)
+            response = respond_to_user(resolved_user_message)
 
 
         # -------------------------------------------------
